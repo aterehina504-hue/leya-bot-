@@ -1,3 +1,4 @@
+from storage import init_db, get_leya_expires, add_leya_days
 import asyncio
 import os
 import time
@@ -66,10 +67,10 @@ async def start(message: types.Message, state: FSMContext, command: CommandObjec
 
         # если доступа не было — даём 7 дней
         if now > expires:
-            user_access[message.from_user.id] = now + 7 * 24 * 60 * 60
+            add_leya_days(message.from_user.id, 7)
         else:
             # если был — продлеваем
-            user_access[message.from_user.id] += 7 * 24 * 60 * 60
+            add_leya_days(message.from_user.id, 7)
 
         await state.set_state(UserState.LEYA_TEST)
         await message.answer(
@@ -104,7 +105,7 @@ async def select_leya(callback: types.CallbackQuery, state: FSMContext):
 @dp.callback_query(lambda c: c.data == "leya_test")
 async def leya_test(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
-    user_access[callback.from_user.id] = time.time() + 86400
+    add_leya_days(callback.from_user.id, 1)
     await state.set_state(UserState.LEYA_TEST)
     await callback.message.answer(
         "🤍 Тестовый доступ активирован на 24 часа.\n\n"
@@ -116,7 +117,7 @@ async def leya_test(callback: types.CallbackQuery, state: FSMContext):
 # ======================
 @dp.message(UserState.LEYA_TEST)
 async def leya_dialog(message: types.Message):
-    expires = user_access.get(message.from_user.id, 0)
+    expires = get_leya_expires(message.from_user.id)
 
 if time.time() > expires:
     await message.answer(
@@ -148,6 +149,7 @@ async def start_webserver():
 # MAIN
 # ======================
 async def main():
+    init_db()
     await start_webserver()
     await dp.start_polling(bot)
 
