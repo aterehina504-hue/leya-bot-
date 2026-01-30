@@ -20,7 +20,7 @@ LEYA_SYSTEM_PROMPT = """
 В конце — один мягкий вопрос.
 """
 
-async def ask_leya(user_message: str) -> str:
+async def ask_leya(user_message: str, history=None) -> str:
     response = await openai.ChatCompletion.acreate(
         model="gpt-4o-mini",
         messages=[
@@ -49,7 +49,7 @@ AMIRA_SYSTEM_PROMPT = """
 В конце — один бережный вопрос.
 """
 
-async def ask_amira(user_message: str) -> str:
+async def ask_amira(user_message: str, history=None) -> str:
     response = await openai.ChatCompletion.acreate(
         model="gpt-4o-mini",
         messages=[
@@ -77,7 +77,7 @@ ELIRA_SYSTEM_PROMPT = """
 В конце — один тёплый вопрос.
 """
 
-async def ask_elira(user_message: str) -> str:
+async def ask_elira(user_message: str, history=None) -> str:
     response = await openai.ChatCompletion.acreate(
         model="gpt-4o-mini",
         messages=[
@@ -108,7 +108,7 @@ NERA_SYSTEM_PROMPT = """
 В конце — один точный вопрос.
 """
 
-async def ask_nera(user_message: str) -> str:
+async def ask_nera(user_message: str, history=None) -> str:
     response = await openai.ChatCompletion.acreate(
         model="gpt-4o-mini",
         messages=[
