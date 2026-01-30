@@ -3,6 +3,10 @@ import asyncio
 import os
 import time
 
+from datetime import datetime
+def format_date(ts: int) -> str:
+    return datetime.fromtimestamp(ts).strftime("%d.%m.%Y")
+
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
 from aiogram.fsm.state import StatesGroup, State
@@ -129,7 +133,10 @@ if time.time() > expires:
     return
 
     reply = await ask_leya(message.text)
-    await message.answer(reply)
+    await message.answer(
+    reply,
+    reply_markup=leya_active_keyboard()
+)
 
 # ======================
 # WEB SERVER FOR RENDER
@@ -195,3 +202,36 @@ def leya_payment_keyboard():
             callback_data="back_to_guides"
         )]
     ])
+def leya_active_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="ℹ️ Статус доступа",
+            callback_data="leya_status"
+        )],
+        [InlineKeyboardButton(
+            text="🌿 Продлить доступ",
+            callback_data="leya_buy"
+        )]
+    ])
+
+@dp.callback_query(lambda c: c.data == "leya_status")
+async def leya_status(callback: types.CallbackQuery):
+    await callback.answer()
+
+    expires = get_leya_expires(callback.from_user.id)
+
+    if expires <= time.time():
+        await callback.message.answer(
+            "⏳ Сейчас у тебя нет активного доступа.\n\n"
+            "Ты можешь оформить подписку и продолжить путь с Леей 🤍"
+        )
+        return
+
+    date_str = format_date(expires)
+
+    await callback.message.answer(
+        f"💎 Доступ к Лее активен до:\n\n"
+        f"📅 **{date_str}**\n\n"
+        "Я рядом 🤍",
+        parse_mode="Markdown"
+    )
