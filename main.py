@@ -32,8 +32,15 @@ dp = Dispatcher()
 # ======================
 class UserState(StatesGroup):
     SELECT_GUIDE = State()
+
     LEYA_MENU = State()
     LEYA_TEST = State()
+
+    AMIRA_MENU = State()
+    AMIRA_TEST = State()
+
+    ELIRA_MENU = State()
+    ELIRA_TEST = State()
 
 # ======================
 # TEMP STORAGE
@@ -88,6 +95,15 @@ async def start(message: types.Message, state: FSMContext, command: CommandObjec
     await state.set_state(UserState.AMIRA_TEST)
     await message.answer(
         "🌼 Доступ к Амире активирован на 7 дней.\n\n"
+        "Я рядом. Можешь продолжить 🤍"
+    )
+    return
+
+    if command.args == "elira":
+    add_elira_days(message.from_user.id, 7)
+    await state.set_state(UserState.ELIRA_TEST)
+    await message.answer(
+        "🌸 Доступ к Элире активирован на 7 дней.\n\n"
         "Я рядом. Можешь продолжить 🤍"
     )
     return
@@ -315,3 +331,50 @@ async def amira_buy(callback: types.CallbackQuery):
         ])
     )
 
+def elira_menu_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="🌸 Попробовать 24 часа",
+            callback_data="elira_test"
+        )],
+        [InlineKeyboardButton(
+            text="💎 Оформить подписку",
+            callback_data="elira_buy"
+        )],
+    ])
+
+@dp.callback_query(lambda c: c.data == "guide_elira")
+async def select_elira(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.set_state(UserState.ELIRA_MENU)
+    await callback.message.answer(
+        "🌸 Элира — путь к своим желаниям\n\n"
+        "Пространство, где можно честно услышать своё «хочу».",
+        reply_markup=elira_menu_keyboard()
+    )
+from storage import add_elira_days, get_elira_expires
+from gpt import ask_elira
+
+@dp.callback_query(lambda c: c.data == "elira_test")
+async def elira_test(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    add_elira_days(callback.from_user.id, 1)
+    await state.set_state(UserState.ELIRA_TEST)
+    await callback.message.answer(
+        "🌸 Тестовый доступ к Элире активирован на 24 часа.\n\n"
+        "Можешь написать всё, что сейчас откликается."
+    )
+
+@dp.message(UserState.ELIRA_TEST)
+async def elira_dialog(message: types.Message):
+    expires = get_elira_expires(message.from_user.id)
+
+    if time.time() > expires:
+        await message.answer(
+            "⏳ Доступ к Элире завершён.\n\n"
+            "Ты можешь оформить подписку и продолжить путь 🌸"
+        )
+        return
+
+    reply = await ask_elira(message.text)
+    await message.answer(reply)
