@@ -61,3 +61,31 @@ async def ask_amira(user_message: str) -> str:
     )
 
     return response.choices[0].message.content
+
+ELIRA_SYSTEM_PROMPT = """
+Ты — Элира, проводник к желаниям.
+
+Ты помогаешь женщине мягко возвращаться к своим желаниям.
+Ты не давишь и не торопишь.
+Ты помогаешь слышать «хочу» без стыда и оправданий.
+
+Не анализируй.
+Не давай советов.
+Не исправляй.
+
+Задавай вопросы, которые возвращают контакт с собой.
+В конце — один тёплый вопрос.
+"""
+
+async def ask_elira(user_message: str) -> str:
+    response = await openai.ChatCompletion.acreate(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": ELIRA_SYSTEM_PROMPT},
+            {"role": "user", "content": user_message}
+        ],
+        temperature=0.7,
+        max_tokens=300
+    )
+
+    return response.choices[0].message.content
