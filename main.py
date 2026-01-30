@@ -55,8 +55,30 @@ def leya_menu_keyboard():
 # ======================
 # START
 # ======================
+from aiogram.filters import CommandObject
+
 @dp.message(CommandStart())
-async def start(message: types.Message, state: FSMContext):
+async def start(message: types.Message, state: FSMContext, command: CommandObject):
+    if command.args == "leya":
+        # пользователь вернулся после оплаты
+        expires = user_access.get(message.from_user.id, 0)
+        now = time.time()
+
+        # если доступа не было — даём 7 дней
+        if now > expires:
+            user_access[message.from_user.id] = now + 7 * 24 * 60 * 60
+        else:
+            # если был — продлеваем
+            user_access[message.from_user.id] += 7 * 24 * 60 * 60
+
+        await state.set_state(UserState.LEYA_TEST)
+        await message.answer(
+            "💎 Доступ активирован на 7 дней.\n\n"
+            "Я рядом 🤍 Можешь продолжить."
+        )
+        return
+
+    # обычный старт
     await state.set_state(UserState.SELECT_GUIDE)
     await message.answer(
         "Я рядом 🤍\n\nВыбери проводника:",
@@ -96,12 +118,14 @@ async def leya_test(callback: types.CallbackQuery, state: FSMContext):
 async def leya_dialog(message: types.Message):
     expires = user_access.get(message.from_user.id, 0)
 
-    if time.time() > expires:
-        await message.answer(
-            "⏳ Тестовый доступ завершён.\n\n"
-            "Чтобы продолжить путь с Леей, оформи подписку 🤍"
-        )
-        return
+if time.time() > expires:
+    await message.answer(
+        "🤍 Наше знакомство подошло к концу.\n\n"
+        "Если тебе было важно это пространство —\n"
+        "ты можешь продолжить путь с Леей и остаться здесь.",
+        reply_markup=leya_expired_keyboard()
+    )
+    return
 
     reply = await ask_leya(message.text)
     await message.answer(reply)
@@ -129,3 +153,43 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+    def leya_expired_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="💎 Продлить доступ на 7 дней",
+            callback_data="leya_buy"
+        )],
+        [InlineKeyboardButton(
+            text="🌿 Вернуться к выбору проводника",
+            callback_data="back_to_guides"
+        )],
+    ])
+    
+@dp.callback_query(lambda c: c.data == "leya_buy")
+async def leya_buy(callback: types.CallbackQuery):
+    await callback.answer()
+    await callback.message.answer(
+        "💎 Ты можешь оформить доступ на 7 дней.\n\n"
+        "После оплаты ты вернёшься сюда и продолжишь путь с Леей 🤍",
+        reply_markup=leya_payment_keyboard()
+    )
+
+@dp.callback_query(lambda c: c.data == "back_to_guides")
+async def back_to_guides(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.set_state(UserState.SELECT_GUIDE)
+    await callback.message.answer(
+        "Выбери проводника:",
+        reply_markup=guides_keyboard()
+    )
+def leya_payment_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="💎 Перейти к оплате",
+            url="https://t.me/lea_payment_bot"
+        )],
+        [InlineKeyboardButton(
+            text="🌿 Вернуться назад",
+            callback_data="back_to_guides"
+        )]
+    ])
