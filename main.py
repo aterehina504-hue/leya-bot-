@@ -42,6 +42,9 @@ class UserState(StatesGroup):
     ELIRA_MENU = State()
     ELIRA_TEST = State()
 
+    NERA_MENU = State()
+    NERA_TEST = State()
+
 # ======================
 # TEMP STORAGE
 # ======================
@@ -105,6 +108,15 @@ async def start(message: types.Message, state: FSMContext, command: CommandObjec
     await message.answer(
         "🌸 Доступ к Элире активирован на 7 дней.\n\n"
         "Я рядом. Можешь продолжить 🤍"
+    )
+    return
+
+    if command.args == "nera":
+    add_nera_days(message.from_user.id, 7)
+    await state.set_state(UserState.NERA_TEST)
+    await message.answer(
+        "🔥 Доступ к Нере активирован на 7 дней.\n\n"
+        "Я здесь. Говори прямо."
     )
     return
 
@@ -378,3 +390,53 @@ async def elira_dialog(message: types.Message):
 
     reply = await ask_elira(message.text)
     await message.answer(reply)
+
+def nera_menu_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="🔥 Попробовать 24 часа",
+            callback_data="nera_test"
+        )],
+        [InlineKeyboardButton(
+            text="💎 Оформить подписку",
+            callback_data="nera_buy"
+        )],
+    ])
+
+@dp.callback_query(lambda c: c.data == "guide_nera")
+async def select_nera(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.set_state(UserState.NERA_MENU)
+    await callback.message.answer(
+        "🔥 Нера — путь к женской силе\n\n"
+        "Пространство ясности, опоры и внутренней мощи.",
+        reply_markup=nera_menu_keyboard()
+    )
+
+from storage import add_nera_days, get_nera_expires
+from gpt import ask_nera
+
+@dp.callback_query(lambda c: c.data == "nera_test")
+async def nera_test(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    add_nera_days(callback.from_user.id, 1)
+    await state.set_state(UserState.NERA_TEST)
+    await callback.message.answer(
+        "🔥 Тестовый доступ к Нере активирован на 24 часа.\n\n"
+        "Напиши прямо. Здесь можно быть сильной."
+    )
+
+@dp.message(UserState.NERA_TEST)
+async def nera_dialog(message: types.Message):
+    expires = get_nera_expires(message.from_user.id)
+
+    if time.time() > expires:
+        await message.answer(
+            "⏳ Доступ к Нере завершён.\n\n"
+            "Ты можешь оформить подписку и продолжить путь 🔥"
+        )
+        return
+
+    reply = await ask_nera(message.text)
+    await message.answer(reply)
+
