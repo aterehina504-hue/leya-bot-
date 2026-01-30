@@ -1,27 +1,31 @@
-from storage import init_db, get_leya_expires, add_leya_days
 import asyncio
 import os
 import time
-
 from datetime import datetime
-def format_date(ts: int) -> str:
-    return datetime.fromtimestamp(ts).strftime("%d.%m.%Y")
 
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, CommandObject
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from dotenv import load_dotenv
 from aiohttp import web
 
-from gpt import ask_leya
+from guides import GUIDES
+from storage import (
+    init_db,
+    get_leya_expires, add_leya_days,
+    get_amira_expires, add_amira_days,
+    get_elira_expires, add_elira_days,
+    get_nera_expires, add_nera_days
+)
+from gpt import ask_leya, ask_amira, ask_elira, ask_nera
+MAX_HISTORY = 6  # 3 пары user/assistant
 
 # ======================
 # ENV
 # ======================
 load_dotenv()
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 bot = Bot(token=BOT_TOKEN)
@@ -32,27 +36,15 @@ dp = Dispatcher()
 # ======================
 class UserState(StatesGroup):
     SELECT_GUIDE = State()
-
-    LEYA_MENU = State()
-    LEYA_TEST = State()
-
-    AMIRA_MENU = State()
-    AMIRA_TEST = State()
-
-    ELIRA_MENU = State()
-    ELIRA_TEST = State()
-
-    NERA_MENU = State()
-    NERA_TEST = State()
+    GUIDE_MENU = State()
+    GUIDE_ACTIVE = State()
 
 # ======================
-# TEMP STORAGE
+# HELPERS
 # ======================
-user_access = {}  # user_id → timestamp
+def format_date(ts: int) -> str:
+    return datetime.fromtimestamp(ts).strftime("%d.%m.%Y")
 
-# ======================
-# KEYBOARDS
-# ======================
 def guides_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🌷 Лея — путь к себе", callback_data="guide_leya")],
@@ -61,66 +53,37 @@ def guides_keyboard():
         [InlineKeyboardButton(text="🔥 Нера — путь к женской силе", callback_data="guide_nera")],
     ])
 
-def leya_menu_keyboard():
+def payment_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🕊 Попробовать 24 часа", callback_data="leya_test")],
-        [InlineKeyboardButton(text="💎 Оформить подписку", callback_data="leya_buy")],
+        [InlineKeyboardButton(
+            text="💎 Перейти к оплате",
+            url="https://t.me/lea_payment_bot"
+        )],
+        [InlineKeyboardButton(
+            text="🌿 Вернуться к выбору",
+            callback_data="back_to_guides"
+        )]
     ])
 
 # ======================
 # START
 # ======================
-from aiogram.filters import CommandObject
-
 @dp.message(CommandStart())
 async def start(message: types.Message, state: FSMContext, command: CommandObject):
-    if command.args == "leya":
-        # пользователь вернулся после оплаты
-        expires = user_access.get(message.from_user.id, 0)
-        now = time.time()
+    if command.args in GUIDES:
+        guide_key = command.args
+        add_days = globals()[f"add_{guide_key}_days"]
+        add_days(message.from_user.id, 7)
 
-        # если доступа не было — даём 7 дней
-        if now > expires:
-            add_leya_days(message.from_user.id, 7)
-        else:
-            # если был — продлеваем
-            add_leya_days(message.from_user.id, 7)
+        await state.set_state(UserState.GUIDE_ACTIVE)
+        await state.update_data(active_guide=guide_key)
 
-        await state.set_state(UserState.LEYA_TEST)
         await message.answer(
-            "💎 Доступ активирован на 7 дней.\n\n"
-            "Я рядом 🤍 Можешь продолжить."
+            f"{GUIDES[guide_key]['title']}\n\n"
+            "💎 Доступ активирован на 7 дней.\nЯ рядом 🤍"
         )
         return
 
-    if command.args == "amira":
-    add_amira_days(message.from_user.id, 7)
-    await state.set_state(UserState.AMIRA_TEST)
-    await message.answer(
-        "🌼 Доступ к Амире активирован на 7 дней.\n\n"
-        "Я рядом. Можешь продолжить 🤍"
-    )
-    return
-
-    if command.args == "elira":
-    add_elira_days(message.from_user.id, 7)
-    await state.set_state(UserState.ELIRA_TEST)
-    await message.answer(
-        "🌸 Доступ к Элире активирован на 7 дней.\n\n"
-        "Я рядом. Можешь продолжить 🤍"
-    )
-    return
-
-    if command.args == "nera":
-    add_nera_days(message.from_user.id, 7)
-    await state.set_state(UserState.NERA_TEST)
-    await message.answer(
-        "🔥 Доступ к Нере активирован на 7 дней.\n\n"
-        "Я здесь. Говори прямо."
-    )
-    return
-
-    # обычный старт
     await state.set_state(UserState.SELECT_GUIDE)
     await message.answer(
         "Я рядом 🤍\n\nВыбери проводника:",
@@ -128,55 +91,112 @@ async def start(message: types.Message, state: FSMContext, command: CommandObjec
     )
 
 # ======================
-# SELECT LEYA
+# SELECT GUIDE
 # ======================
-@dp.callback_query(lambda c: c.data == "guide_leya")
-async def select_leya(callback: types.CallbackQuery, state: FSMContext):
+@dp.callback_query(lambda c: c.data.startswith("guide_"))
+async def select_guide(callback: types.CallbackQuery, state: FSMContext):
+    guide_key = callback.data.replace("guide_", "")
+    guide = GUIDES[guide_key]
+
     await callback.answer()
-    await state.set_state(UserState.LEYA_MENU)
+    await state.set_state(UserState.GUIDE_MENU)
+    await state.update_data(active_guide=guide_key)
+
     await callback.message.answer(
-        "🌷 Лея — путь к себе\n\n"
-        "Бережное пространство, где тебя слышат.",
-        reply_markup=leya_menu_keyboard()
+        f"{guide['title']}\n\n{guide['menu_text']}",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🕊 Попробовать 24 часа", callback_data="test")],
+            [InlineKeyboardButton(text="💎 Оформить подписку", callback_data="buy")],
+        ])
     )
 
 # ======================
-# LEYA TEST MODE
+# TEST MODE
 # ======================
-@dp.callback_query(lambda c: c.data == "leya_test")
-async def leya_test(callback: types.CallbackQuery, state: FSMContext):
+@dp.callback_query(lambda c: c.data == "test")
+async def start_test(callback: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    guide_key = data["active_guide"]
+    guide = GUIDES[guide_key]
+
+    add_days = globals()[f"add_{guide_key}_days"]
+    add_days(callback.from_user.id, 1)
+
+    await state.set_state(UserState.GUIDE_ACTIVE)
+    await callback.message.answer(guide["test_text"])
+
+# ======================
+# BUY
+# ======================
+@dp.callback_query(lambda c: c.data == "buy")
+async def buy(callback: types.CallbackQuery):
     await callback.answer()
-    add_leya_days(callback.from_user.id, 1)
-    await state.set_state(UserState.LEYA_TEST)
     await callback.message.answer(
-        "🤍 Тестовый доступ активирован на 24 часа.\n\n"
-        "Можешь написать Лее всё, что сейчас важно."
+        "💎 Оформление доступа на 7 дней.\n\n"
+        "После оплаты ты вернёшься сюда.",
+        reply_markup=payment_keyboard()
     )
 
 # ======================
-# LEYA DIALOG
+# DIALOG
 # ======================
-@dp.message(UserState.LEYA_TEST)
-async def leya_dialog(message: types.Message):
-    expires = get_leya_expires(message.from_user.id)
+@dp.message(UserState.GUIDE_ACTIVE)
+async def guide_dialog(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    guide_key = data["active_guide"]
 
-if time.time() > expires:
-    await message.answer(
-        "🤍 Наше знакомство подошло к концу.\n\n"
-        "Если тебе было важно это пространство —\n"
-        "ты можешь продолжить путь с Леей и остаться здесь.",
-        reply_markup=leya_expired_keyboard()
+    # --- проверка доступа ---
+    get_expires = globals()[f"get_{guide_key}_expires"]
+    expires = get_expires(message.from_user.id)
+
+    if time.time() > expires:
+        await message.answer(
+            "⏳ Доступ завершён.\n\n"
+            "Ты можешь оформить подписку и продолжить путь 🤍",
+            reply_markup=payment_keyboard()
+        )
+        return
+
+    # --- история диалога ---
+    history = data.get("history", [])
+
+    history.append({
+        "role": "user",
+        "content": message.text
+    })
+
+    # ограничиваем историю
+    history = history[-MAX_HISTORY:]
+
+    # --- запрос к GPT ---
+    ask_func = globals()[GUIDES[guide_key]["ask_func"]]
+    reply = await ask_func(message.text, history=history)
+
+    # сохраняем ответ в историю
+    history.append({
+        "role": "assistant",
+        "content": reply
+    })
+
+    history = history[-MAX_HISTORY:]
+
+    await state.update_data(history=history)
+    await message.answer(reply)
+
+# ======================
+# BACK TO GUIDES
+# ======================
+@dp.callback_query(lambda c: c.data == "back_to_guides")
+async def back_to_guides(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.set_state(UserState.SELECT_GUIDE)
+    await callback.message.answer(
+        "Выбери проводника:",
+        reply_markup=guides_keyboard()
     )
-    return
-
-    reply = await ask_leya(message.text)
-    await message.answer(
-    reply,
-    reply_markup=leya_active_keyboard()
-)
 
 # ======================
-# WEB SERVER FOR RENDER
+# WEB SERVER (RENDER)
 # ======================
 async def healthcheck(request):
     return web.Response(text="OK")
@@ -199,244 +219,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    def leya_expired_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="💎 Продлить доступ на 7 дней",
-            callback_data="leya_buy"
-        )],
-        [InlineKeyboardButton(
-            text="🌿 Вернуться к выбору проводника",
-            callback_data="back_to_guides"
-        )],
-    ])
-    
-@dp.callback_query(lambda c: c.data == "leya_buy")
-async def leya_buy(callback: types.CallbackQuery):
-    await callback.answer()
-    await callback.message.answer(
-        "💎 Ты можешь оформить доступ на 7 дней.\n\n"
-        "После оплаты ты вернёшься сюда и продолжишь путь с Леей 🤍",
-        reply_markup=leya_payment_keyboard()
-    )
-
-@dp.callback_query(lambda c: c.data == "back_to_guides")
-async def back_to_guides(callback: types.CallbackQuery, state: FSMContext):
-    await callback.answer()
-    await state.set_state(UserState.SELECT_GUIDE)
-    await callback.message.answer(
-        "Выбери проводника:",
-        reply_markup=guides_keyboard()
-    )
-def leya_payment_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="💎 Перейти к оплате",
-            url="https://t.me/lea_payment_bot"
-        )],
-        [InlineKeyboardButton(
-            text="🌿 Вернуться назад",
-            callback_data="back_to_guides"
-        )]
-    ])
-def leya_active_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="ℹ️ Статус доступа",
-            callback_data="leya_status"
-        )],
-        [InlineKeyboardButton(
-            text="🌿 Продлить доступ",
-            callback_data="leya_buy"
-        )]
-    ])
-
-@dp.callback_query(lambda c: c.data == "leya_status")
-async def leya_status(callback: types.CallbackQuery):
-    await callback.answer()
-
-    expires = get_leya_expires(callback.from_user.id)
-
-    if expires <= time.time():
-        await callback.message.answer(
-            "⏳ Сейчас у тебя нет активного доступа.\n\n"
-            "Ты можешь оформить подписку и продолжить путь с Леей 🤍"
-        )
-        return
-
-    date_str = format_date(expires)
-
-    await callback.message.answer(
-        f"💎 Доступ к Лее активен до:\n\n"
-        f"📅 **{date_str}**\n\n"
-        "Я рядом 🤍",
-        parse_mode="Markdown"
-    )
-
-class UserState(StatesGroup):
-    SELECT_GUIDE = State()
-    LEYA_MENU = State()
-    LEYA_TEST = State()
-    AMIRA_MENU = State()
-    AMIRA_TEST = State()
-
-def amira_menu_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="🌼 Попробовать 24 часа",
-            callback_data="amira_test"
-        )],
-        [InlineKeyboardButton(
-            text="💎 Оформить подписку",
-            callback_data="amira_buy"
-        )],
-    ])
-
-@dp.callback_query(lambda c: c.data == "guide_amira")
-async def select_amira(callback: types.CallbackQuery, state: FSMContext):
-    await callback.answer()
-    await state.set_state(UserState.AMIRA_MENU)
-    await callback.message.answer(
-        "🌼 Амира — путь к самоценности\n\n"
-        "Пространство, где тебе не нужно ничего доказывать.",
-        reply_markup=amira_menu_keyboard()
-    )
-
-from storage import add_amira_days, get_amira_expires
-from gpt import ask_amira
-
-@dp.callback_query(lambda c: c.data == "amira_test")
-async def amira_test(callback: types.CallbackQuery, state: FSMContext):
-    await callback.answer()
-    add_amira_days(callback.from_user.id, 1)
-    await state.set_state(UserState.AMIRA_TEST)
-    await callback.message.answer(
-        "🌼 Тестовый доступ к Амире активирован на 24 часа.\n\n"
-        "Можешь написать всё, что сейчас важно."
-    )
-
-@dp.message(UserState.AMIRA_TEST)
-async def amira_dialog(message: types.Message):
-    expires = get_amira_expires(message.from_user.id)
-
-    if time.time() > expires:
-        await message.answer(
-            "⏳ Доступ к Амире завершён.\n\n"
-            "Ты можешь оформить подписку и продолжить путь 🌼"
-        )
-        return
-
-    reply = await ask_amira(message.text)
-    await message.answer(reply)
-   
-    @dp.callback_query(lambda c: c.data == "amira_buy")
-async def amira_buy(callback: types.CallbackQuery):
-    await callback.answer()
-    await callback.message.answer(
-        "💎 Ты можешь оформить доступ к Амире на 7 дней.\n\n"
-        "После оплаты ты вернёшься сюда 🌼",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text="💎 Перейти к оплате",
-                url="https://t.me/lea_payment_bot"
-            )]
-        ])
-    )
-
-def elira_menu_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="🌸 Попробовать 24 часа",
-            callback_data="elira_test"
-        )],
-        [InlineKeyboardButton(
-            text="💎 Оформить подписку",
-            callback_data="elira_buy"
-        )],
-    ])
-
-@dp.callback_query(lambda c: c.data == "guide_elira")
-async def select_elira(callback: types.CallbackQuery, state: FSMContext):
-    await callback.answer()
-    await state.set_state(UserState.ELIRA_MENU)
-    await callback.message.answer(
-        "🌸 Элира — путь к своим желаниям\n\n"
-        "Пространство, где можно честно услышать своё «хочу».",
-        reply_markup=elira_menu_keyboard()
-    )
-from storage import add_elira_days, get_elira_expires
-from gpt import ask_elira
-
-@dp.callback_query(lambda c: c.data == "elira_test")
-async def elira_test(callback: types.CallbackQuery, state: FSMContext):
-    await callback.answer()
-    add_elira_days(callback.from_user.id, 1)
-    await state.set_state(UserState.ELIRA_TEST)
-    await callback.message.answer(
-        "🌸 Тестовый доступ к Элире активирован на 24 часа.\n\n"
-        "Можешь написать всё, что сейчас откликается."
-    )
-
-@dp.message(UserState.ELIRA_TEST)
-async def elira_dialog(message: types.Message):
-    expires = get_elira_expires(message.from_user.id)
-
-    if time.time() > expires:
-        await message.answer(
-            "⏳ Доступ к Элире завершён.\n\n"
-            "Ты можешь оформить подписку и продолжить путь 🌸"
-        )
-        return
-
-    reply = await ask_elira(message.text)
-    await message.answer(reply)
-
-def nera_menu_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="🔥 Попробовать 24 часа",
-            callback_data="nera_test"
-        )],
-        [InlineKeyboardButton(
-            text="💎 Оформить подписку",
-            callback_data="nera_buy"
-        )],
-    ])
-
-@dp.callback_query(lambda c: c.data == "guide_nera")
-async def select_nera(callback: types.CallbackQuery, state: FSMContext):
-    await callback.answer()
-    await state.set_state(UserState.NERA_MENU)
-    await callback.message.answer(
-        "🔥 Нера — путь к женской силе\n\n"
-        "Пространство ясности, опоры и внутренней мощи.",
-        reply_markup=nera_menu_keyboard()
-    )
-
-from storage import add_nera_days, get_nera_expires
-from gpt import ask_nera
-
-@dp.callback_query(lambda c: c.data == "nera_test")
-async def nera_test(callback: types.CallbackQuery, state: FSMContext):
-    await callback.answer()
-    add_nera_days(callback.from_user.id, 1)
-    await state.set_state(UserState.NERA_TEST)
-    await callback.message.answer(
-        "🔥 Тестовый доступ к Нере активирован на 24 часа.\n\n"
-        "Напиши прямо. Здесь можно быть сильной."
-    )
-
-@dp.message(UserState.NERA_TEST)
-async def nera_dialog(message: types.Message):
-    expires = get_nera_expires(message.from_user.id)
-
-    if time.time() > expires:
-        await message.answer(
-            "⏳ Доступ к Нере завершён.\n\n"
-            "Ты можешь оформить подписку и продолжить путь 🔥"
-        )
-        return
-
-    reply = await ask_nera(message.text)
-    await message.answer(reply)
-
