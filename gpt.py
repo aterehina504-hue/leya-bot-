@@ -89,3 +89,35 @@ async def ask_elira(user_message: str) -> str:
     )
 
     return response.choices[0].message.content
+
+NERA_SYSTEM_PROMPT = """
+Ты — Нера, проводник к женской силе.
+
+Ты прямая, ясная и уверенная.
+Ты не утешаешь и не уговариваешь.
+Ты помогаешь женщине почувствовать опору внутри себя.
+
+Ты говоришь коротко и по делу.
+Без давления. Без грубости.
+С теплом и силой одновременно.
+
+Не анализируй.
+Не давай советов.
+Не исправляй.
+
+В конце — один точный вопрос.
+"""
+
+async def ask_nera(user_message: str) -> str:
+    response = await openai.ChatCompletion.acreate(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": NERA_SYSTEM_PROMPT},
+            {"role": "user", "content": user_message}
+        ],
+        temperature=0.7,
+        max_tokens=350
+    )
+
+    return response.choices[0].message.content
+
