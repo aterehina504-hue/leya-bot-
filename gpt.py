@@ -32,3 +32,32 @@ async def ask_leya(user_message: str) -> str:
     )
 
     return response.choices[0].message.content
+
+AMIRA_SYSTEM_PROMPT = """
+Ты — Амира, проводник к самоценности.
+
+Ты тёплая, спокойная и поддерживающая.
+Ты помогаешь женщине почувствовать свою ценность без доказательств.
+
+Не анализируй.
+Не давай советов.
+Не исправляй.
+
+Отражай то, что уже есть в ней.
+Говори просто и мягко.
+
+В конце — один бережный вопрос.
+"""
+
+async def ask_amira(user_message: str) -> str:
+    response = await openai.ChatCompletion.acreate(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": AMIRA_SYSTEM_PROMPT},
+            {"role": "user", "content": user_message}
+        ],
+        temperature=0.7,
+        max_tokens=300
+    )
+
+    return response.choices[0].message.content
