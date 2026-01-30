@@ -83,6 +83,15 @@ async def start(message: types.Message, state: FSMContext, command: CommandObjec
         )
         return
 
+    if command.args == "amira":
+    add_amira_days(message.from_user.id, 7)
+    await state.set_state(UserState.AMIRA_TEST)
+    await message.answer(
+        "🌼 Доступ к Амире активирован на 7 дней.\n\n"
+        "Я рядом. Можешь продолжить 🤍"
+    )
+    return
+
     # обычный старт
     await state.set_state(UserState.SELECT_GUIDE)
     await message.answer(
@@ -235,3 +244,74 @@ async def leya_status(callback: types.CallbackQuery):
         "Я рядом 🤍",
         parse_mode="Markdown"
     )
+
+class UserState(StatesGroup):
+    SELECT_GUIDE = State()
+    LEYA_MENU = State()
+    LEYA_TEST = State()
+    AMIRA_MENU = State()
+    AMIRA_TEST = State()
+
+def amira_menu_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="🌼 Попробовать 24 часа",
+            callback_data="amira_test"
+        )],
+        [InlineKeyboardButton(
+            text="💎 Оформить подписку",
+            callback_data="amira_buy"
+        )],
+    ])
+
+@dp.callback_query(lambda c: c.data == "guide_amira")
+async def select_amira(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.set_state(UserState.AMIRA_MENU)
+    await callback.message.answer(
+        "🌼 Амира — путь к самоценности\n\n"
+        "Пространство, где тебе не нужно ничего доказывать.",
+        reply_markup=amira_menu_keyboard()
+    )
+
+from storage import add_amira_days, get_amira_expires
+from gpt import ask_amira
+
+@dp.callback_query(lambda c: c.data == "amira_test")
+async def amira_test(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    add_amira_days(callback.from_user.id, 1)
+    await state.set_state(UserState.AMIRA_TEST)
+    await callback.message.answer(
+        "🌼 Тестовый доступ к Амире активирован на 24 часа.\n\n"
+        "Можешь написать всё, что сейчас важно."
+    )
+
+@dp.message(UserState.AMIRA_TEST)
+async def amira_dialog(message: types.Message):
+    expires = get_amira_expires(message.from_user.id)
+
+    if time.time() > expires:
+        await message.answer(
+            "⏳ Доступ к Амире завершён.\n\n"
+            "Ты можешь оформить подписку и продолжить путь 🌼"
+        )
+        return
+
+    reply = await ask_amira(message.text)
+    await message.answer(reply)
+   
+    @dp.callback_query(lambda c: c.data == "amira_buy")
+async def amira_buy(callback: types.CallbackQuery):
+    await callback.answer()
+    await callback.message.answer(
+        "💎 Ты можешь оформить доступ к Амире на 7 дней.\n\n"
+        "После оплаты ты вернёшься сюда 🌼",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="💎 Перейти к оплате",
+                url="https://t.me/lea_payment_bot"
+            )]
+        ])
+    )
+
