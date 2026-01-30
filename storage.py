@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS access (
     user_id INTEGER PRIMARY KEY,
     leya_expires INTEGER,
     amira_expires INTEGER,
-    elira_expires INTEGER
+    elira_expires INTEGER,
+    nera_expires INTEGER
 )
 """)
 
@@ -126,3 +127,39 @@ def add_elira_days(user_id: int, days: int):
 
     conn.commit()
     conn.close()
+
+def get_nera_expires(user_id: int) -> int:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT nera_expires FROM access WHERE user_id = ?",
+        (user_id,)
+    )
+    row = cur.fetchone()
+    conn.close()
+
+    return row[0] if row and row[0] else 0
+
+
+def add_nera_days(user_id: int, days: int):
+    now = int(time.time())
+    current = get_nera_expires(user_id)
+
+    if current < now:
+        new_expires = now + days * 86400
+    else:
+        new_expires = current + days * 86400
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("""
+    INSERT INTO access (user_id, nera_expires)
+    VALUES (?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET nera_expires=excluded.nera_expires
+    """, (user_id, new_expires))
+
+    conn.commit()
+    conn.close()
+
