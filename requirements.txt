@@ -1,4 +1,2 @@
 aiogram==3.*
-openai==0.28.1
 python-dotenv
-aiohttp
