@@ -35,6 +35,7 @@ dp = Dispatcher()
 # STATES
 # ======================
 class UserState(StatesGroup):
+    ONBOARDING = State()
     SELECT_GUIDE = State()
     GUIDE_MENU = State()
     GUIDE_ACTIVE = State()
@@ -70,6 +71,9 @@ def payment_keyboard():
 # ======================
 @dp.message(CommandStart())
 async def start(message: types.Message, state: FSMContext, command: CommandObject):
+    data = await state.get_data()
+
+    # --- возврат после оплаты ---
     if command.args in GUIDES:
         guide_key = command.args
         add_days = globals()[f"add_{guide_key}_days"]
@@ -80,13 +84,61 @@ async def start(message: types.Message, state: FSMContext, command: CommandObjec
 
         await message.answer(
             f"{GUIDES[guide_key]['title']}\n\n"
-            "💎 Доступ активирован на 7 дней.\nЯ рядом 🤍"
+            "💎 Доступ активирован на 7 дней.\n"
+            "Я рядом 🤍"
         )
         return
 
-    await state.set_state(UserState.SELECT_GUIDE)
+    # --- если онбординг уже был ---
+    if data.get("onboarding_done"):
+        await state.set_state(UserState.SELECT_GUIDE)
+        await message.answer(
+            "Я рядом 🤍\n\nВыбери проводника:",
+            reply_markup=guides_keyboard()
+        )
+        return
+
+    # --- первый вход ---
+    await state.set_state(UserState.ONBOARDING)
     await message.answer(
-        "Я рядом 🤍\n\nВыбери проводника:",
+        "Привет 🤍\n\n"
+        "Это пространство бережного диалога.\n"
+        "Здесь не нужно быть «правильной».\n"
+        "Можно просто быть.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Дальше 🌱", callback_data="onboard_1")]
+        ])
+    )
+
+@dp.callback_query(lambda c: c.data == "onboard_1")
+async def onboarding_step_1(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+
+    await callback.message.answer(
+        "Здесь ты можешь:\n\n"
+        "— выговориться\n"
+        "— побыть в тишине\n"
+        "— услышать себя\n\n"
+        "Я буду рядом и поддержу 🌿",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Поняла 🤍", callback_data="onboard_2")]
+        ])
+    )
+
+@dp.callback_query(lambda c: c.data == "onboard_2")
+async def onboarding_step_2(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+
+    await state.update_data(
+    onboarding_done=True,
+    onboarding_time=time.time(),
+    first_message_sent=False
+)
+    await state.set_state(UserState.SELECT_GUIDE)
+
+    await callback.message.answer(
+        "Ты можешь выбрать проводника —\n"
+        "тот стиль, который откликается тебе сейчас 🤍",
         reply_markup=guides_keyboard()
     )
 
@@ -145,6 +197,31 @@ async def guide_dialog(message: types.Message, state: FSMContext):
     data = await state.get_data()
     guide_key = data["active_guide"]
 
+    # --- напоминание после 3 дней тишины ---
+    last_message_time = data.get("last_user_message_time")
+    silence_reminder_sent = data.get("silence_3days_reminder_sent", False)
+
+    if last_message_time and not silence_reminder_sent:
+        if time.time() - last_message_time > 3 * 24 * 3600:
+            await message.answer(
+                "Я заметила паузу 🤍\n\n"
+                "Иногда молчание — тоже часть пути.\n"
+                "Если захочется вернуться — я здесь."
+            )
+            await state.update_data(silence_3days_reminder_sent=True)
+
+    # --- напоминание через 24 часа после онбординга ---
+    onboarding_time = data.get("onboarding_time")
+    first_message_sent = data.get("first_message_sent", False)
+
+    if onboarding_time and not first_message_sent:
+        if time.time() - onboarding_time > 24 * 3600:
+            await message.answer(
+                "Я рядом 🤍\n\n"
+                "Если захочется — можно просто написать пару слов."
+            )
+            await state.update_data(first_message_sent=True)
+
     # --- проверка доступа ---
     get_expires = globals()[f"get_{guide_key}_expires"]
     expires = get_expires(message.from_user.id)
@@ -157,6 +234,18 @@ async def guide_dialog(message: types.Message, state: FSMContext):
         )
         return
 
+    # --- напоминание за 1 день до окончания ---
+    time_left = expires - time.time()
+    reminder_key = f"expiry_reminder_{guide_key}"
+
+    if 0 < time_left < 24 * 3600 and not data.get(reminder_key):
+        await message.answer(
+            "🤍 Хочу мягко напомнить:\n"
+            "доступ скоро завершится.\n\n"
+            "Если тебе важно продолжить — ты можешь продлить его в любой момент."
+        )
+        await state.update_data(**{reminder_key: True})
+
     # --- история диалога ---
     history = data.get("history", [])
 
@@ -164,23 +253,23 @@ async def guide_dialog(message: types.Message, state: FSMContext):
         "role": "user",
         "content": message.text
     })
-
-    # ограничиваем историю
     history = history[-MAX_HISTORY:]
 
-    # --- запрос к GPT ---
     ask_func = globals()[GUIDES[guide_key]["ask_func"]]
     reply = await ask_func(message.text, history=history)
 
-    # сохраняем ответ в историю
     history.append({
         "role": "assistant",
         "content": reply
     })
-
     history = history[-MAX_HISTORY:]
 
-    await state.update_data(history=history)
+    await state.update_data(
+        history=history,
+        last_user_message_time=time.time(),
+        silence_3days_reminder_sent=False
+    )
+
     await message.answer(reply)
 
 # ======================
