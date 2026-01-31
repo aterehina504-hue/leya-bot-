@@ -1,7 +1,6 @@
 import asyncio
 import os
 import time
-import threading
 from datetime import datetime
 
 from aiogram import Bot, Dispatcher, types
@@ -67,9 +66,24 @@ def payment_keyboard():
 # START
 # ======================
 @dp.message(CommandStart())
-async def start(message: types.Message, state: FSMContext):
-    data = await state.get_data()
+async def start(message: types.Message, state: FSMContext, command: CommandObject):
+    # пользователь вернулся после оплаты
+    if command.args in GUIDES:
+        guide_key = command.args
 
+        add_days(message.from_user.id, guide_key, 7)
+
+        await state.set_state(UserState.GUIDE_ACTIVE)
+        await state.update_data(active_guide=guide_key)
+
+        await message.answer(
+            f"{GUIDES[guide_key]['title']}\n\n"
+            "💎 Доступ активирован.\n"
+            "Я рядом 🤍"
+        )
+        return
+
+    # обычный старт
     await state.set_state(UserState.SELECT_GUIDE)
     await message.answer(
         "Я рядом 🤍\n\nВыбери проводника:",
@@ -96,7 +110,7 @@ async def select_guide(callback: types.CallbackQuery, state: FSMContext):
         f"{guide['title']}\n\n{guide['menu_text']}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🕊 Попробовать 24 часа", callback_data="test")],
-            [InlineKeyboardButton(text="💎 Оформить доступ", callback_data="buy")]
+            [InlineKeyboardButton(text="💎 Оформить доступ", url="https://t.me/lea_payment_bot")]
         ])
     )
 
@@ -224,7 +238,8 @@ async def start_webserver():
     runner = web.AppRunner(app)
     await runner.setup()
 
-    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", 8080)))
+    port = int(os.getenv("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
 # ======================
@@ -238,6 +253,3 @@ async def main():
 
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
