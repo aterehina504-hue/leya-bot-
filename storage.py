@@ -1,157 +1,159 @@
 import sqlite3
 import time
-from typing import Optional
+import json
+from typing import Optional, List, Tuple
 
 DB_PATH = "db.sqlite3"
 
+
+# ======================
+# INIT
+# ======================
 def init_db():
     conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    cur = conn.cursor()
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS leya_access (
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
-            expires INTEGER
+            guide TEXT,
+            expires INTEGER,
+            last_message INTEGER,
+            flags TEXT
         )
     """)
+
     conn.commit()
     conn.close()
-    
-def get_leya_expires(user_id: int) -> int:
+
+
+# ======================
+# ACCESS
+# ======================
+def get_expires(user_id: int, guide: str) -> int:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
     cur.execute(
-        "SELECT leya_expires FROM access WHERE user_id = ?",
-        (user_id,)
+        "SELECT expires FROM users WHERE user_id=? AND guide=?",
+        (user_id, guide)
     )
     row = cur.fetchone()
     conn.close()
 
     return row[0] if row and row[0] else 0
 
-def set_leya_expires(user_id: int, expires: int):
+
+def add_days(user_id: int, guide: str, days: int):
+    now = int(time.time())
+    current = get_expires(user_id, guide)
+
+    expires = now + days * 86400 if current < now else current + days * 86400
+
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
     cur.execute("""
-    INSERT INTO access (user_id, leya_expires)
-    VALUES (?, ?)
-    ON CONFLICT(user_id) DO UPDATE SET leya_expires=excluded.leya_expires
-    """, (user_id, expires))
+        INSERT INTO users (user_id, guide, expires, last_message, flags)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            guide=excluded.guide,
+            expires=excluded.expires
+    """, (user_id, guide, expires, now, "{}"))
 
     conn.commit()
     conn.close()
 
-def add_leya_days(user_id: int, days: int):
-    now = int(time.time())
-    current = get_leya_expires(user_id)
 
-    if current < now:
-        new_expires = now + days * 86400
-    else:
-        new_expires = current + days * 86400
-
-    set_leya_expires(user_id, new_expires)
-
-def get_amira_expires(user_id: int) -> int:
+# ======================
+# MESSAGES
+# ======================
+def set_last_message_time(user_id: int):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
     cur.execute(
-        "SELECT amira_expires FROM access WHERE user_id = ?",
+        "UPDATE users SET last_message=? WHERE user_id=?",
+        (int(time.time()), user_id)
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def get_last_message_time(user_id: int) -> Optional[int]:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT last_message FROM users WHERE user_id=?",
         (user_id,)
     )
     row = cur.fetchone()
     conn.close()
 
-    return row[0] if row and row[0] else 0
+    return row[0] if row else None
 
-def add_amira_days(user_id: int, days: int):
-    now = int(time.time())
-    current = get_amira_expires(user_id)
 
-    if current < now:
-        new_expires = now + days * 86400
-    else:
-        new_expires = current + days * 86400
-
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
-    cur.execute("""
-    INSERT INTO access (user_id, amira_expires)
-    VALUES (?, ?)
-    ON CONFLICT(user_id) DO UPDATE SET amira_expires=excluded.amira_expires
-    """, (user_id, new_expires))
-
-    conn.commit()
-    conn.close()
-
-def get_elira_expires(user_id: int) -> int:
+# ======================
+# FLAGS (REMINDERS)
+# ======================
+def get_flag(user_id: int, flag: str) -> bool:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
     cur.execute(
-        "SELECT elira_expires FROM access WHERE user_id = ?",
+        "SELECT flags FROM users WHERE user_id=?",
         (user_id,)
     )
     row = cur.fetchone()
     conn.close()
 
-    return row[0] if row and row[0] else 0
+    if not row or not row[0]:
+        return False
 
-def add_elira_days(user_id: int, days: int):
-    now = int(time.time())
-    current = get_elira_expires(user_id)
+    flags = json.loads(row[0])
+    return flags.get(flag, False)
 
-    if current < now:
-        new_expires = now + days * 86400
-    else:
-        new_expires = current + days * 86400
 
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
-    cur.execute("""
-    INSERT INTO access (user_id, elira_expires)
-    VALUES (?, ?)
-    ON CONFLICT(user_id) DO UPDATE SET elira_expires=excluded.elira_expires
-    """, (user_id, new_expires))
-
-    conn.commit()
-    conn.close()
-
-def get_nera_expires(user_id: int) -> int:
+def set_flag(user_id: int, flag: str):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
     cur.execute(
-        "SELECT nera_expires FROM access WHERE user_id = ?",
+        "SELECT flags FROM users WHERE user_id=?",
         (user_id,)
     )
     row = cur.fetchone()
+
+    flags = json.loads(row[0]) if row and row[0] else {}
+    flags[flag] = True
+
+    cur.execute(
+        "UPDATE users SET flags=? WHERE user_id=?",
+        (json.dumps(flags), user_id)
+    )
+
+    conn.commit()
     conn.close()
 
-    return row[0] if row and row[0] else 0
 
-def add_nera_days(user_id: int, days: int):
+# ======================
+# REMINDER WORKER
+# ======================
+def get_all_active_users() -> List[Tuple[int, str, int]]:
     now = int(time.time())
-    current = get_nera_expires(user_id)
-
-    if current < now:
-        new_expires = now + days * 86400
-    else:
-        new_expires = current + days * 86400
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
     cur.execute("""
-    INSERT INTO access (user_id, nera_expires)
-    VALUES (?, ?)
-    ON CONFLICT(user_id) DO UPDATE SET nera_expires=excluded.nera_expires
-    """, (user_id, new_expires))
+        SELECT user_id, guide, expires
+        FROM users
+        WHERE expires > ?
+    """, (now,))
 
-    conn.commit()
+    rows = cur.fetchall()
     conn.close()
+
+    return rows
