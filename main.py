@@ -102,21 +102,21 @@ async def start(message: types.Message, state: FSMContext, command: CommandObjec
 # ======================
 @dp.callback_query(lambda c: c.data.startswith("guide_"))
 async def select_guide(callback: types.CallbackQuery, state: FSMContext):
-    guide_key = callback.data.replace("guide_", "")
-    guide = GUIDES.get(guide_key)
-
-    if not guide:
-        await callback.answer("Проводник не найден 🤍", show_alert=True)
-        return
-
     await callback.answer()
+
+    guide_key = callback.data.replace("guide_", "")
+
+    await state.clear()
+
     await state.set_state(UserState.GUIDE_MENU)
     await state.update_data(active_guide=guide_key)
+
+    guide = GUIDES[guide_key]
 
     await callback.message.answer(
         f"{guide['title']}\n\n{guide['menu_text']}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🕊 Попробовать 24 часа", callback_data="test")],
+            [InlineKeyboardButton(text="🕊 Попробовать 24 часа", callback_data=f"test_{guide_key}"],
             [InlineKeyboardButton(text="💎 Оформить доступ", url="https://t.me/lea_payment_bot")]
         ])
     )
@@ -124,17 +124,15 @@ async def select_guide(callback: types.CallbackQuery, state: FSMContext):
 # ======================
 # TEST
 # ======================
-@dp.callback_query(lambda c: c.data == "test")
+@dp.callback_query(lambda c: c.data.startswith("test_"))
 async def start_test(callback: types.CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    guide_key = data.get("active_guide")
+    guide_key = callback.data.replace("test_", "")
 
-    if not guide_key:
-        await callback.message.answer("Сначала выбери проводника 🤍")
-        return
+    await state.clear()
+    await state.set_state(UserState.GUIDE_ACTIVE)
+    await state.update_data(active_guide=guide_key)
 
     add_days(callback.from_user.id, guide_key, 1)
-    await state.set_state(UserState.GUIDE_ACTIVE)
 
     await callback.message.answer(GUIDES[guide_key]["test_text"])
 
