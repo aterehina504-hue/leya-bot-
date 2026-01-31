@@ -6,21 +6,17 @@ DB_PATH = "db.sqlite3"
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
+    cursor = conn.cursor()
 
-cur.execute("""
-CREATE TABLE IF NOT EXISTS access (
-    user_id INTEGER PRIMARY KEY,
-    leya_expires INTEGER,
-    amira_expires INTEGER,
-    elira_expires INTEGER,
-    nera_expires INTEGER
-)
-""")
-
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS leya_access (
+            user_id INTEGER PRIMARY KEY,
+            expires INTEGER
+        )
+    """)
     conn.commit()
     conn.close()
-
+    
 def get_leya_expires(user_id: int) -> int:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -71,7 +67,6 @@ def get_amira_expires(user_id: int) -> int:
 
     return row[0] if row and row[0] else 0
 
-
 def add_amira_days(user_id: int, days: int):
     now = int(time.time())
     current = get_amira_expires(user_id)
@@ -105,7 +100,6 @@ def get_elira_expires(user_id: int) -> int:
     conn.close()
 
     return row[0] if row and row[0] else 0
-
 
 def add_elira_days(user_id: int, days: int):
     now = int(time.time())
@@ -141,7 +135,6 @@ def get_nera_expires(user_id: int) -> int:
 
     return row[0] if row and row[0] else 0
 
-
 def add_nera_days(user_id: int, days: int):
     now = int(time.time())
     current = get_nera_expires(user_id)
@@ -162,4 +155,3 @@ def add_nera_days(user_id: int, days: int):
 
     conn.commit()
     conn.close()
-
