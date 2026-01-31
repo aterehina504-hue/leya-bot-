@@ -53,10 +53,15 @@ class UserState(StatesGroup):
 # HELPERS
 # ======================
 def guides_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=guide["button"], callback_data=f"guide_{key}")]
-        for key, guide in GUIDES.items()
-    ])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text=guide["title"],
+                callback_data=f"guide_{key}"
+            )]
+            for key, guide in GUIDES.items()
+        ]
+    )
 
 def payment_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
