@@ -3,6 +3,7 @@ import asyncio
 import os
 import time
 from datetime import datetime
+print("MAIN BOT: FILE LOADED")
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
@@ -247,10 +248,18 @@ async def start_webserver():
 # MAIN
 # ======================
 async def main():
+    print("MAIN BOT: main() started")
+
     init_db()
+    print("MAIN BOT: db init done")
+
     await start_webserver()
+    print("MAIN BOT: webserver started")
 
     asyncio.get_running_loop().create_task(reminder_worker())
+    print("MAIN BOT: reminder task started")
 
     await bot.delete_webhook(drop_pending_updates=True)
+    print("MAIN BOT: webhook deleted")
+
     await dp.start_polling(bot)
