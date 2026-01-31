@@ -191,14 +191,14 @@ async def reminder_worker():
             # 3 дня тишины
             last = get_last_message_time(user_id)
             if last and now - last > 3 * 86400:
-if not get_flag(user_id, "silence_3d"):
-    await bot.send_message(
-    user_id,
-    "Я заметила паузу 🤍\n\nЕсли захочется вернуться — я здесь."
-    )
-    set_flag(user_id, "silence_3d")
-    
-# 24 часа до окончания
+                if not get_flag(user_id, "silence_3d"):
+                    await bot.send_message(
+                        user_id,
+                        "Я заметила паузу 🤍\n\nЕсли захочется вернуться — я здесь."
+                    )
+                    set_flag(user_id, "silence_3d")
+
+            # 24 часа до окончания
             if 0 < expires - now < 86400:
                 key = f"expiry_{guide_key}"
                 if not get_flag(user_id, key):
