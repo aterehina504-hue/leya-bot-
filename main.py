@@ -148,7 +148,7 @@ async def onboarding_step_2(callback: types.CallbackQuery, state: FSMContext):
 @dp.callback_query(lambda c: c.data.startswith("guide_"))
 async def select_guide(callback: types.CallbackQuery, state: FSMContext):
     guide_key = callback.data.replace("guide_", "")
-    guide = GUIDES[guide_key]
+    guide = GUIDES[guide_key]  # 🔴 ВОТ ЭТОГО НЕ ХВАТАЛО
 
     await callback.answer()
     await state.set_state(UserState.GUIDE_MENU)
@@ -174,7 +174,7 @@ async def start_test(callback: types.CallbackQuery, state: FSMContext):
     add_days = globals()[f"add_{guide_key}_days"]
     add_days(callback.from_user.id, 1)
 
-    await state.set_state(UserState.GUIDE_ACTIVE)
+    await state.set_state(UserState.GUIDE_ACTIVE)  # 🔴 ОБЯЗАТЕЛЬНО
     await callback.message.answer(guide["test_text"])
 
 # ======================
@@ -195,7 +195,26 @@ async def buy(callback: types.CallbackQuery):
 @dp.message(UserState.GUIDE_ACTIVE)
 async def guide_dialog(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    guide_key = data["active_guide"]
+    guide_key = data.get("active_guide")
+
+    if not guide_key:
+        await state.set_state(UserState.SELECT_GUIDE)
+        await message.answer(
+            "Давай выберем проводника 🤍",
+            reply_markup=guides_keyboard()
+        )
+        return
+
+    get_expires = globals()[f"get_{guide_key}_expires"]
+    expires = get_expires(message.from_user.id)
+
+    if not expires or expires <= time.time():
+        await message.answer(
+            "⏳ Доступ завершён.\n\n"
+            "Ты можешь оформить подписку и продолжить путь 🤍",
+            reply_markup=payment_keyboard()
+        )
+        return
 
     # --- напоминание после 3 дней тишины ---
     last_message_time = data.get("last_user_message_time")
@@ -221,18 +240,6 @@ async def guide_dialog(message: types.Message, state: FSMContext):
                 "Если захочется — можно просто написать пару слов."
             )
             await state.update_data(first_message_sent=True)
-
-    # --- проверка доступа ---
-    get_expires = globals()[f"get_{guide_key}_expires"]
-    expires = get_expires(message.from_user.id)
-
-    if time.time() > expires:
-        await message.answer(
-            "⏳ Доступ завершён.\n\n"
-            "Ты можешь оформить подписку и продолжить путь 🤍",
-            reply_markup=payment_keyboard()
-        )
-        return
 
     # --- напоминание за 1 день до окончания ---
     time_left = expires - time.time()
