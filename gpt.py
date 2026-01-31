@@ -120,4 +120,26 @@ async def ask_nera(user_message: str, history=None) -> str:
     )
 
     return response.choices[0].message.content
+from typing import List, Dict
 
+# реестр проводников
+ASK_FUNCS = {
+    "leya": ask_leya,
+    "amira": ask_amira,
+    "elira": ask_elira,
+    "nera": ask_nera,
+}
+
+async def ask_guide(
+    guide_key: str,
+    message: str,
+    history: List[Dict[str, str]] | None = None
+) -> str:
+    ask_func = ASK_FUNCS.get(guide_key)
+
+    if not ask_func:
+        return "Я немного растерялась 🤍 Давай выберем проводника заново."
+
+    # ⚠️ history пока не используем — сознательно
+    # твои промпты устроены как «здесь-и-сейчас»
+    return await ask_func(message, history=history)
