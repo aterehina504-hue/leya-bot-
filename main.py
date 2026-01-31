@@ -1,3 +1,4 @@
+from aiogram.filters import CommandStart, CommandObject
 import asyncio
 import os
 import time
