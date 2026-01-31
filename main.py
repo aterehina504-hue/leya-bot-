@@ -259,6 +259,9 @@ async def main():
     asyncio.get_running_loop().create_task(reminder_worker())
     print("MAIN BOT: reminder task started")
 
+if __name__ == "__main__":
+    asyncio.run(main())
+
     await bot.delete_webhook(drop_pending_updates=True)
     print("MAIN BOT: webhook deleted")
 
