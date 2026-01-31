@@ -118,7 +118,6 @@ async def select_guide(callback: types.CallbackQuery, state: FSMContext):
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🕊 Попробовать 24 часа", callback_data=f"test_{guide_key}")],
             [InlineKeyboardButton(text="💎 Оформить доступ", url="https://t.me/lea_payment_bot")]
-        ])
     )
 
 # ======================
