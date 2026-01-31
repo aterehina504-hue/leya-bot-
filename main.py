@@ -1,6 +1,7 @@
 import asyncio
 import os
 import time
+import threading
 from datetime import datetime
 
 from aiogram import Bot, Dispatcher, types
@@ -219,9 +220,11 @@ async def healthcheck(request):
 async def start_webserver():
     app = web.Application()
     app.router.add_get("/", healthcheck)
+
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", 10000)))
+
+    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", 8080)))
     await site.start()
 
 # ======================
