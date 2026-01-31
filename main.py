@@ -287,6 +287,9 @@ async def back_to_guides(callback: types.CallbackQuery, state: FSMContext):
 # ======================
 # WEB SERVER (RENDER)
 # ======================
+async def healthcheck(request):
+    return web.Response(text="OK")
+
 async def start_webserver():
     app = web.Application()
     app.router.add_get("/", healthcheck)
