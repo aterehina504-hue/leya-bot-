@@ -333,26 +333,26 @@ START_BUTTONS = {
 PRICE_EXPERIMENTS = {
     "leya": {
         "A": {"days": 7, "price": 29000, "label": "7 дней — 290 ⭐"},
-        "B": {"days": 7, "price": 34000, "label": "7 дней — 340 ⭐"},
+        "B": {"days": 7, "price": 39000, "label": "7 дней — 390 ⭐"},
         "monthly": {"days": 30, "price": 99000, "label": "30 дней — 990 ⭐"},
         "recurring": {"price": 79000, "label": "Автоподписка — 790 ⭐ / 30 дней"},
     },
-    "elira": {
-        "A": {"days": 7, "price": 59000, "label": "7 дней — 590 ⭐"},
-        "B": {"days": 7, "price": 69000, "label": "7 дней — 690 ⭐"},
-        "monthly": {"days": 30, "price": 169000, "label": "30 дней — 1690 ⭐"},
-        "recurring": {"price": 139000, "label": "Автоподписка — 1390 ⭐ / 30 дней"},
-    },
-    "amira": {
+        "amira": {
         "A": {"days": 7, "price": 39000, "label": "7 дней — 390 ⭐"},
-        "B": {"days": 7, "price": 45000, "label": "7 дней — 450 ⭐"},
+        "B": {"days": 7, "price": 49000, "label": "7 дней — 490 ⭐"},
         "monthly": {"days": 30, "price": 119000, "label": "30 дней — 1190 ⭐"},
         "recurring": {"price": 99000, "label": "Автоподписка — 990 ⭐ / 30 дней"},
     },
+    "elira": {
+        "A": {"days": 7, "price": 49000, "label": "7 дней — 490 ⭐"},
+        "B": {"days": 7, "price": 59000, "label": "7 дней — 590 ⭐"},
+        "monthly": {"days": 30, "price": 149000, "label": "30 дней — 1490 ⭐"},
+        "recurring": {"price": 119000, "label": "Автоподписка — 1190 ⭐ / 30 дней"},
+    },
     "nera": {
-        "A": {"days": 7, "price": 79000, "label": "7 дней — 790 ⭐"},
-        "B": {"days": 7, "price": 89000, "label": "7 дней — 890 ⭐"},
-        "monthly": {"days": 30, "price": 229000, "label": "30 дней — 2290 ⭐"},
-        "recurring": {"price": 189000, "label": "Автоподписка — 1890 ⭐ / 30 дней"},
+        "A": {"days": 7, "price": 59000, "label": "7 дней — 590 ⭐"},
+        "B": {"days": 7, "price": 69000, "label": "7 дней — 690 ⭐"},
+        "monthly": {"days": 30, "price": 179000, "label": "30 дней — 1790 ⭐"},
+        "recurring": {"price": 149000, "label": "Автоподписка — 1490 ⭐ / 30 дней"},
     },
 }
