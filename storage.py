@@ -1,159 +1,285 @@
+import random
 import sqlite3
 import time
-import json
-from typing import Optional, List, Tuple
+from typing import Optional
 
-DB_PATH = "db.sqlite3"
+DB_PATH = "bot.db"
 
 
-# ======================
-# INIT
-# ======================
+def db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            guide TEXT,
-            expires INTEGER,
-            last_message INTEGER,
-            flags TEXT
+    with db() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS subscriptions (
+                user_id INTEGER NOT NULL,
+                guide_key TEXT NOT NULL,
+                expires_at INTEGER NOT NULL DEFAULT 0,
+                reminded_24h INTEGER NOT NULL DEFAULT 0,
+                recurring_charge_id TEXT,
+                recurring_active INTEGER NOT NULL DEFAULT 0,
+                recurring_expires_at INTEGER,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (user_id, guide_key)
+            )
+            """
         )
-    """)
 
-    conn.commit()
-    conn.close()
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS payments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                guide_key TEXT NOT NULL,
+                tariff_key TEXT NOT NULL,
+                amount INTEGER NOT NULL,
+                currency TEXT NOT NULL,
+                tg_charge_id TEXT NOT NULL UNIQUE,
+                is_recurring INTEGER NOT NULL DEFAULT 0,
+                is_first_recurring INTEGER NOT NULL DEFAULT 0,
+                subscription_expiration_date INTEGER,
+                ab_group TEXT,
+                paid_at INTEGER NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_ab (
+                user_id INTEGER NOT NULL,
+                guide_key TEXT NOT NULL,
+                ab_group TEXT NOT NULL,
+                assigned_at INTEGER NOT NULL,
+                PRIMARY KEY (user_id, guide_key)
+            )
+            """
+        )
 
 
-# ======================
-# ACCESS
-# ======================
-def get_expires(user_id: int, guide: str) -> int:
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
+def get_ab_group(user_id: int, guide_key: str) -> str:
+    with db() as conn:
+        row = conn.execute(
+            "SELECT ab_group FROM user_ab WHERE user_id = ? AND guide_key = ?",
+            (user_id, guide_key),
+        ).fetchone()
 
-    cur.execute(
-        "SELECT expires FROM users WHERE user_id=? AND guide=?",
-        (user_id, guide)
-    )
-    row = cur.fetchone()
-    conn.close()
+        if row:
+            return row["ab_group"]
 
-    return row[0] if row and row[0] else 0
+        ab_group = random.choice(["A", "B"])
+        conn.execute(
+            "INSERT INTO user_ab (user_id, guide_key, ab_group, assigned_at) VALUES (?, ?, ?, ?)",
+            (user_id, guide_key, ab_group, int(time.time())),
+        )
+        return ab_group
 
 
-def add_days(user_id: int, guide: str, days: int):
+def get_expires(user_id: int, guide_key: str) -> Optional[int]:
+    with db() as conn:
+        row = conn.execute(
+            "SELECT expires_at FROM subscriptions WHERE user_id = ? AND guide_key = ?",
+            (user_id, guide_key),
+        ).fetchone()
+        return row["expires_at"] if row else None
+
+
+def add_days(user_id: int, guide_key: str, days: int) -> int:
     now = int(time.time())
-    current = get_expires(user_id, guide)
+    current = get_expires(user_id, guide_key) or 0
 
-    expires = now + days * 86400 if current < now else current + days * 86400
+    if current > now:
+        new_exp = current + days * 86400
+    else:
+        new_exp = now + days * 86400
 
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
+    with db() as conn:
+        conn.execute(
+            """
+            INSERT INTO subscriptions (
+                user_id, guide_key, expires_at, reminded_24h,
+                created_at, updated_at
+            )
+            VALUES (?, ?, ?, 0, ?, ?)
+            ON CONFLICT(user_id, guide_key) DO UPDATE SET
+                expires_at = excluded.expires_at,
+                reminded_24h = 0,
+                updated_at = excluded.updated_at
+            """,
+            (user_id, guide_key, new_exp, now, now),
+        )
 
-    cur.execute("""
-        INSERT INTO users (user_id, guide, expires, last_message, flags)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(user_id) DO UPDATE SET
-            guide=excluded.guide,
-            expires=excluded.expires
-    """, (user_id, guide, expires, now, "{}"))
-
-    conn.commit()
-    conn.close()
-
-
-# ======================
-# MESSAGES
-# ======================
-def set_last_message_time(user_id: int):
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
-    cur.execute(
-        "UPDATE users SET last_message=? WHERE user_id=?",
-        (int(time.time()), user_id)
-    )
-
-    conn.commit()
-    conn.close()
+    return new_exp
 
 
-def get_last_message_time(user_id: int) -> Optional[int]:
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
-    cur.execute(
-        "SELECT last_message FROM users WHERE user_id=?",
-        (user_id,)
-    )
-    row = cur.fetchone()
-    conn.close()
-
-    return row[0] if row else None
-
-
-# ======================
-# FLAGS (REMINDERS)
-# ======================
-def get_flag(user_id: int, flag: str) -> bool:
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
-    cur.execute(
-        "SELECT flags FROM users WHERE user_id=?",
-        (user_id,)
-    )
-    row = cur.fetchone()
-    conn.close()
-
-    if not row or not row[0]:
-        return False
-
-    flags = json.loads(row[0])
-    return flags.get(flag, False)
-
-
-def set_flag(user_id: int, flag: str):
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
-    cur.execute(
-        "SELECT flags FROM users WHERE user_id=?",
-        (user_id,)
-    )
-    row = cur.fetchone()
-
-    flags = json.loads(row[0]) if row and row[0] else {}
-    flags[flag] = True
-
-    cur.execute(
-        "UPDATE users SET flags=? WHERE user_id=?",
-        (json.dumps(flags), user_id)
-    )
-
-    conn.commit()
-    conn.close()
-
-
-# ======================
-# REMINDER WORKER
-# ======================
-def get_all_active_users() -> List[Tuple[int, str, int]]:
+def set_subscription_from_recurring(user_id: int, guide_key: str, expires_at: int, charge_id: str, active: bool):
     now = int(time.time())
+    with db() as conn:
+        conn.execute(
+            """
+            INSERT INTO subscriptions (
+                user_id, guide_key, expires_at, reminded_24h,
+                recurring_charge_id, recurring_active, recurring_expires_at,
+                created_at, updated_at
+            )
+            VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, guide_key) DO UPDATE SET
+                expires_at = excluded.expires_at,
+                reminded_24h = 0,
+                recurring_charge_id = excluded.recurring_charge_id,
+                recurring_active = excluded.recurring_active,
+                recurring_expires_at = excluded.recurring_expires_at,
+                updated_at = excluded.updated_at
+            """,
+            (
+                user_id,
+                guide_key,
+                expires_at,
+                charge_id,
+                1 if active else 0,
+                expires_at,
+                now,
+                now,
+            ),
+        )
 
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
 
-    cur.execute("""
-        SELECT user_id, guide, expires
-        FROM users
-        WHERE expires > ?
-    """, (now,))
+def get_recurring_info(user_id: int, guide_key: str):
+    with db() as conn:
+        row = conn.execute(
+            """
+            SELECT recurring_charge_id, recurring_active, recurring_expires_at
+            FROM subscriptions
+            WHERE user_id = ? AND guide_key = ?
+            """,
+            (user_id, guide_key),
+        ).fetchone()
+        return row
 
-    rows = cur.fetchall()
-    conn.close()
 
-    return rows
+def set_recurring_status(user_id: int, guide_key: str, active: bool):
+    with db() as conn:
+        conn.execute(
+            """
+            UPDATE subscriptions
+            SET recurring_active = ?, updated_at = ?
+            WHERE user_id = ? AND guide_key = ?
+            """,
+            (1 if active else 0, int(time.time()), user_id, guide_key),
+        )
+
+
+def has_subscription(user_id: int, guide_key: str) -> bool:
+    exp = get_expires(user_id, guide_key)
+    return bool(exp and exp > time.time())
+
+
+def save_payment(
+    user_id: int,
+    guide_key: str,
+    tariff_key: str,
+    amount: int,
+    currency: str,
+    tg_charge_id: str,
+    is_recurring: bool,
+    is_first_recurring: bool,
+    subscription_expiration_date,
+    ab_group: str | None,
+):
+    with db() as conn:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO payments (
+                user_id, guide_key, tariff_key, amount, currency,
+                tg_charge_id, is_recurring, is_first_recurring,
+                subscription_expiration_date, ab_group, paid_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                guide_key,
+                tariff_key,
+                amount,
+                currency,
+                tg_charge_id,
+                1 if is_recurring else 0,
+                1 if is_first_recurring else 0,
+                subscription_expiration_date,
+                ab_group,
+                int(time.time()),
+            ),
+        )
+
+
+def get_revenue_stats():
+    with db() as conn:
+        total = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS cnt FROM payments"
+        ).fetchone()
+
+        by_tariff = conn.execute(
+            """
+            SELECT guide_key, tariff_key, COALESCE(SUM(amount),0) AS amount, COUNT(*) AS cnt
+            FROM payments
+            GROUP BY guide_key, tariff_key
+            ORDER BY amount DESC
+            """
+        ).fetchall()
+
+        by_ab = conn.execute(
+            """
+            SELECT guide_key, ab_group, COALESCE(SUM(amount),0) AS amount, COUNT(*) AS cnt
+            FROM payments
+            WHERE ab_group IS NOT NULL
+            GROUP BY guide_key, ab_group
+            ORDER BY guide_key, ab_group
+            """
+        ).fetchall()
+
+        return total, by_tariff, by_ab
+
+
+def get_all_active_users():
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT user_id FROM subscriptions WHERE expires_at > ?",
+            (int(time.time()),),
+        ).fetchall()
+        return [r["user_id"] for r in rows]
+
+
+def get_users_for_reminder(reminder_before_seconds: int):
+    now = int(time.time())
+    limit_ts = now + reminder_before_seconds
+
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT user_id, guide_key, expires_at, recurring_active
+            FROM subscriptions
+            WHERE expires_at > ?
+              AND expires_at <= ?
+              AND reminded_24h = 0
+            """,
+            (now, limit_ts),
+        ).fetchall()
+        return rows
+
+
+def mark_reminded(user_id: int, guide_key: str):
+    with db() as conn:
+        conn.execute(
+            """
+            UPDATE subscriptions
+            SET reminded_24h = 1, updated_at = ?
+            WHERE user_id = ? AND guide_key = ?
+            """,
+            (int(time.time()), user_id, guide_key),
+        )
