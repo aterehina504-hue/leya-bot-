@@ -993,7 +993,7 @@ async def guide_dialog(message: types.Message, state: FSMContext):
 
     await message.answer(reply)
 
-    def detect_depth(text: str) -> int:
+def detect_depth(text: str) -> int:
     t = text.lower()
 
     if any(x in t for x in ["потеряла себя", "сломалась", "очень больно"]):
