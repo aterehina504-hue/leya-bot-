@@ -1019,7 +1019,7 @@ if new_depth == 2 and not user_has_paid_access(user_id, guide_key):
         reply_markup=paywall_keyboard(user_id, guide_key)
     )
 
-    if random.random() < 0.3:
+if random.random() < 0.3:
     await message.answer("Я рядом с тобой в этом процессе.")
 
     hooks = [
