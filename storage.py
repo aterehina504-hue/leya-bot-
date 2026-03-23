@@ -375,3 +375,82 @@ def get_revenue_stats():
         ).fetchall()
 
         return total, by_tariff, by_ab
+
+current_day INTEGER DEFAULT 1
+path_started_at INTEGER
+
+def start_user_path(user_id: int, guide_key: str):
+    now = int(time.time())
+    with db() as conn:
+        conn.execute(
+            """
+            UPDATE subscriptions
+            SET current_day = 1,
+                path_started_at = ?
+            WHERE user_id = ? AND guide_key = ?
+            """,
+            (now, user_id, guide_key),
+        )
+
+
+def get_user_day(user_id: int, guide_key: str) -> int:
+    with db() as conn:
+        row = conn.execute(
+            """
+            SELECT current_day, path_started_at
+            FROM subscriptions
+            WHERE user_id = ? AND guide_key = ?
+            """,
+            (user_id, guide_key),
+        ).fetchone()
+
+        if not row:
+            return 1
+
+        if not row["path_started_at"]:
+            return row["current_day"] or 1
+
+        days_passed = int((time.time() - row["path_started_at"]) / 86400) + 1
+        return min(days_passed, 7)
+
+
+def advance_day(user_id: int, guide_key: str):
+    with db() as conn:
+        conn.execute(
+            """
+            UPDATE subscriptions
+            SET current_day = MIN(current_day + 1, 7),
+                updated_at = ?
+            WHERE user_id = ? AND guide_key = ?
+            """,
+            (int(time.time()), user_id, guide_key),
+        )
+        
+PATH_STEPS = {
+    "leya": {
+        1: "Давай немного замедлимся.\n\nЧто сейчас больше всего тебя тревожит?",
+        2: "Попробуй описать это чувство точнее.\n\nЧто ты сейчас испытываешь?",
+        3: "В каких ситуациях ты чаще всего теряешь себя?",
+        4: "Как будто внутри есть конфликт.\n\nМежду чем и чем он?",
+        5: "А если выбрать себя — что это было бы?",
+        6: "Что ты уже начала замечать в себе за эти дни?",
+        7: "Ты прошла важный путь.\n\nЧто изменилось внутри?",
+    },
+
+    "amira": {
+        1: "Где ты сейчас ставишь себя не на первое место?",
+        2: "В каких моментах ты соглашаешься, хотя не хочешь?",
+        3: "Что ты боишься потерять, если начнёшь выбирать себя?",
+        4: "Где ты терпишь лишнее?",
+        5: "А если бы ты уважала себя полностью — что изменилось бы?",
+        6: "Что уже стало иначе?",
+        7: "Какой ты хочешь быть дальше?",
+    },
+}
+
+def build_progress_text(day: int) -> str:
+    return (
+        f"День {day} из 7\n\n"
+        f"Ты уже в процессе.\n"
+        f"И это важно 🤍"
+    )
