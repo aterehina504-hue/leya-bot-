@@ -1,7 +1,7 @@
 import random
 import sqlite3
 import time
-from typing import Optional
+from typing import Optional, List, Dict
 
 DB_PATH = "bot.db"
 
@@ -12,6 +12,9 @@ def db():
     return conn
 
 
+# ======================
+# INIT
+# ======================
 def init_db():
     with db() as conn:
         conn.execute(
@@ -21,11 +24,17 @@ def init_db():
                 guide_key TEXT NOT NULL,
                 expires_at INTEGER NOT NULL DEFAULT 0,
                 reminded_24h INTEGER NOT NULL DEFAULT 0,
+
                 recurring_charge_id TEXT,
                 recurring_active INTEGER NOT NULL DEFAULT 0,
                 recurring_expires_at INTEGER,
+
+                last_activity_at INTEGER,
+                last_retention_type TEXT,
+
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
+
                 PRIMARY KEY (user_id, guide_key)
             )
             """
@@ -63,6 +72,25 @@ def init_db():
         )
 
 
+# ======================
+# ACTIVITY
+# ======================
+def update_activity(user_id: int, guide_key: str):
+    now = int(time.time())
+    with db() as conn:
+        conn.execute(
+            """
+            UPDATE subscriptions
+            SET last_activity_at = ?, updated_at = ?
+            WHERE user_id = ? AND guide_key = ?
+            """,
+            (now, now, user_id, guide_key),
+        )
+
+
+# ======================
+# AB TEST
+# ======================
 def get_ab_group(user_id: int, guide_key: str) -> str:
     with db() as conn:
         row = conn.execute(
@@ -81,6 +109,9 @@ def get_ab_group(user_id: int, guide_key: str) -> str:
         return ab_group
 
 
+# ======================
+# SUBSCRIPTIONS
+# ======================
 def get_expires(user_id: int, guide_key: str) -> Optional[int]:
     with db() as conn:
         row = conn.execute(
@@ -88,6 +119,11 @@ def get_expires(user_id: int, guide_key: str) -> Optional[int]:
             (user_id, guide_key),
         ).fetchone()
         return row["expires_at"] if row else None
+
+
+def has_subscription(user_id: int, guide_key: str) -> bool:
+    exp = get_expires(user_id, guide_key)
+    return bool(exp and exp > time.time())
 
 
 def add_days(user_id: int, guide_key: str, days: int) -> int:
@@ -103,38 +139,45 @@ def add_days(user_id: int, guide_key: str, days: int) -> int:
         conn.execute(
             """
             INSERT INTO subscriptions (
-                user_id, guide_key, expires_at, reminded_24h,
+                user_id, guide_key, expires_at,
+                reminded_24h,
+                last_activity_at,
                 created_at, updated_at
             )
-            VALUES (?, ?, ?, 0, ?, ?)
+            VALUES (?, ?, ?, 0, ?, ?, ?)
             ON CONFLICT(user_id, guide_key) DO UPDATE SET
                 expires_at = excluded.expires_at,
                 reminded_24h = 0,
+                last_activity_at = excluded.last_activity_at,
                 updated_at = excluded.updated_at
             """,
-            (user_id, guide_key, new_exp, now, now),
+            (user_id, guide_key, new_exp, now, now, now),
         )
 
     return new_exp
 
 
+# ======================
+# RECURRING
+# ======================
 def set_subscription_from_recurring(user_id: int, guide_key: str, expires_at: int, charge_id: str, active: bool):
     now = int(time.time())
     with db() as conn:
         conn.execute(
             """
             INSERT INTO subscriptions (
-                user_id, guide_key, expires_at, reminded_24h,
+                user_id, guide_key, expires_at,
                 recurring_charge_id, recurring_active, recurring_expires_at,
+                last_activity_at,
                 created_at, updated_at
             )
-            VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, guide_key) DO UPDATE SET
                 expires_at = excluded.expires_at,
-                reminded_24h = 0,
                 recurring_charge_id = excluded.recurring_charge_id,
                 recurring_active = excluded.recurring_active,
                 recurring_expires_at = excluded.recurring_expires_at,
+                last_activity_at = excluded.last_activity_at,
                 updated_at = excluded.updated_at
             """,
             (
@@ -146,13 +189,14 @@ def set_subscription_from_recurring(user_id: int, guide_key: str, expires_at: in
                 expires_at,
                 now,
                 now,
+                now,
             ),
         )
 
 
 def get_recurring_info(user_id: int, guide_key: str):
     with db() as conn:
-        row = conn.execute(
+        return conn.execute(
             """
             SELECT recurring_charge_id, recurring_active, recurring_expires_at
             FROM subscriptions
@@ -160,7 +204,6 @@ def get_recurring_info(user_id: int, guide_key: str):
             """,
             (user_id, guide_key),
         ).fetchone()
-        return row
 
 
 def set_recurring_status(user_id: int, guide_key: str, active: bool):
@@ -175,11 +218,9 @@ def set_recurring_status(user_id: int, guide_key: str, active: bool):
         )
 
 
-def has_subscription(user_id: int, guide_key: str) -> bool:
-    exp = get_expires(user_id, guide_key)
-    return bool(exp and exp > time.time())
-
-
+# ======================
+# PAYMENTS
+# ======================
 def save_payment(
     user_id: int,
     guide_key: str,
@@ -218,6 +259,97 @@ def save_payment(
         )
 
 
+# ======================
+# RETENTION QUERIES
+# ======================
+
+def get_users_for_inactive(days: int) -> List[Dict]:
+    now = int(time.time())
+    threshold = now - days * 86400
+
+    with db() as conn:
+        return conn.execute(
+            """
+            SELECT user_id, guide_key, last_activity_at, last_retention_type
+            FROM subscriptions
+            WHERE last_activity_at IS NOT NULL
+              AND last_activity_at <= ?
+            """,
+            (threshold,),
+        ).fetchall()
+
+
+def get_users_for_expired(days: int) -> List[Dict]:
+    now = int(time.time())
+    threshold = now - days * 86400
+
+    with db() as conn:
+        return conn.execute(
+            """
+            SELECT user_id, guide_key, expires_at, last_retention_type
+            FROM subscriptions
+            WHERE expires_at <= ?
+            """,
+            (threshold,),
+        ).fetchall()
+
+
+def set_retention_sent(user_id: int, guide_key: str, retention_type: str):
+    with db() as conn:
+        conn.execute(
+            """
+            UPDATE subscriptions
+            SET last_retention_type = ?, updated_at = ?
+            WHERE user_id = ? AND guide_key = ?
+            """,
+            (retention_type, int(time.time()), user_id, guide_key),
+        )
+
+
+# ======================
+# REMINDER (старый)
+# ======================
+def get_users_for_reminder(reminder_before_seconds: int):
+    now = int(time.time())
+    limit_ts = now + reminder_before_seconds
+
+    with db() as conn:
+        return conn.execute(
+            """
+            SELECT user_id, guide_key, expires_at, recurring_active
+            FROM subscriptions
+            WHERE expires_at > ?
+              AND expires_at <= ?
+              AND reminded_24h = 0
+            """,
+            (now, limit_ts),
+        ).fetchall()
+
+
+def mark_reminded(user_id: int, guide_key: str):
+    with db() as conn:
+        conn.execute(
+            """
+            UPDATE subscriptions
+            SET reminded_24h = 1, updated_at = ?
+            WHERE user_id = ? AND guide_key = ?
+            """,
+            (int(time.time()), user_id, guide_key),
+        )
+
+
+# ======================
+# STATS
+# ======================
+def get_all_active_users():
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT user_id FROM subscriptions WHERE expires_at > ?",
+            (int(time.time()),),
+        ).fetchall()
+        return [r["user_id"] for r in rows]
+
+
 def get_revenue_stats():
     with db() as conn:
         total = conn.execute(
@@ -239,47 +371,7 @@ def get_revenue_stats():
             FROM payments
             WHERE ab_group IS NOT NULL
             GROUP BY guide_key, ab_group
-            ORDER BY guide_key, ab_group
             """
         ).fetchall()
 
         return total, by_tariff, by_ab
-
-
-def get_all_active_users():
-    with db() as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT user_id FROM subscriptions WHERE expires_at > ?",
-            (int(time.time()),),
-        ).fetchall()
-        return [r["user_id"] for r in rows]
-
-
-def get_users_for_reminder(reminder_before_seconds: int):
-    now = int(time.time())
-    limit_ts = now + reminder_before_seconds
-
-    with db() as conn:
-        rows = conn.execute(
-            """
-            SELECT user_id, guide_key, expires_at, recurring_active
-            FROM subscriptions
-            WHERE expires_at > ?
-              AND expires_at <= ?
-              AND reminded_24h = 0
-            """,
-            (now, limit_ts),
-        ).fetchall()
-        return rows
-
-
-def mark_reminded(user_id: int, guide_key: str):
-    with db() as conn:
-        conn.execute(
-            """
-            UPDATE subscriptions
-            SET reminded_24h = 1, updated_at = ?
-            WHERE user_id = ? AND guide_key = ?
-            """,
-            (int(time.time()), user_id, guide_key),
-        )
