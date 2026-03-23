@@ -32,6 +32,12 @@ from storage import (
 
 from gpt import ask_guide
 
+import random
+
+from paths import PATH_DAYS
+from insights import INSIGHT_TEMPLATES
+from storage import get_user_day, update_activity
+
 # ======================
 # CONFIG
 # ======================
@@ -447,6 +453,110 @@ async def start(message: types.Message, state: FSMContext):
         reply_markup=guides_keyboard()
     )
 
+@dp.message(UserState.GUIDE_ACTIVE)
+async def guide_dialog(message: types.Message, state: FSMContext):
+    if not message.text:
+        await message.answer("Я читаю только текст 🤍")
+        return
+
+    data = await state.get_data()
+    guide_key = data.get("active_guide")
+
+    if not guide_key:
+        await state.set_state(UserState.SELECT_GUIDE)
+        await message.answer("Выбери проводника 🤍", reply_markup=guides_keyboard())
+        return
+
+    user_id = message.from_user.id
+
+    # ===== проверка доступа =====
+    expires = get_expires(user_id, guide_key)
+    if not expires or expires <= time.time():
+        await state.update_data(trial_active=False)
+        await message.answer(
+            build_expired_paywall_text(guide_key, user_id),
+            reply_markup=expired_keyboard(user_id, guide_key)
+        )
+        return
+
+    history = data.get("history", [])
+    trial_active = bool(data.get("trial_active"))
+    paywall_stage = data.get("paywall_stage")
+    message_count = int(data.get("message_count_in_session", 0))
+
+    # ===== день пользователя =====
+    day = get_user_day(user_id, guide_key)
+    update_activity(user_id, guide_key)
+
+    # ===== сценарный старт =====
+    if message_count == 0:
+        if guide_key in PATH_DAYS and day in PATH_DAYS[guide_key]:
+            await message.answer(
+                random.choice(PATH_DAYS[guide_key][day])
+            )
+
+    # увеличиваем счетчик
+    message_count += 1
+
+    # ===== GPT =====
+    temp_history = history + [{"role": "user", "content": message.text}]
+
+    reply = await ask_guide(
+        guide_key=guide_key,
+        message=message.text,
+        history=temp_history
+    )
+
+    history = (temp_history + [{"role": "assistant", "content": reply}])[-MAX_HISTORY:]
+
+    await state.update_data(
+        history=history,
+        message_count_in_session=message_count
+    )
+
+    await message.answer(reply)
+
+    # ===== инсайт =====
+    if random.random() < 0.2:
+        await message.answer("Как будто это повторяется в твоей жизни")
+
+    # ===== привязанность =====
+    if random.random() < 0.25:
+        await message.answer("Я рядом с тобой в этом")
+
+    # ===== day-based paywall =====
+    if day == 3 and message_count >= 2:
+        await message.answer(
+            "Ты сейчас очень близко к тому, чтобы разобраться.\n\n"
+            "Хочешь продолжить?",
+            reply_markup=paywall_keyboard(user_id, guide_key, renewal=False)
+        )
+
+    # ========= PAYWALL ВНУТРИ ДИАЛОГА =========
+    if should_show_trial_paywall(
+        message_count=message_count,
+        trial_active=trial_active,
+        is_paid=False,
+    ) and paywall_stage is None:
+        await asyncio.sleep(0.4)
+        await message.answer(
+            build_trial_paywall_text(guide_key, user_id),
+            reply_markup=paywall_keyboard(user_id, guide_key, renewal=False)
+        )
+        await state.update_data(paywall_stage="trial_shown")
+        return
+
+    if should_show_deep_paywall(
+        message_count=message_count,
+        trial_active=trial_active,
+        is_paid=False,
+    ) and paywall_stage == "trial_shown":
+        await asyncio.sleep(0.4)
+        await message.answer(
+            build_deep_paywall_text(guide_key, user_id),
+            reply_markup=paywall_keyboard(user_id, guide_key, renewal=False)
+        )
+        await state.update_data(paywall_stage="deep_shown")
 
 # ======================
 # GUIDE MENU
@@ -1049,38 +1159,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-from paths import PATH_DAYS
-from storage import get_user_day, update_activity
-from insights import INSIGHT_TEMPLATES
-import random
-
-day = get_user_day(user_id, guide_key)
-update_activity(user_id, guide_key)
-
-# сценарий
-if message_count == 0:
-    if guide_key in PATH_DAYS:
-        await message.answer(
-            random.choice(PATH_DAYS[guide_key][day])
-        )
-
-# GPT
-reply = await ask_guide(...)
-
-await message.answer(reply)
-
-# инсайт
-if random.random() < 0.2:
-    await message.answer("Как будто это повторяется в твоей жизни")
-
-# привязанность
-if random.random() < 0.25:
-    await message.answer("Я рядом с тобой в этом")
-
-if day == 3 and message_count >= 2:
-    await message.answer(
-        "Ты сейчас очень близко к тому, чтобы разобраться.\n\n"
-        "Хочешь продолжить?",
-        reply_markup=paywall_keyboard(...)
-    )
