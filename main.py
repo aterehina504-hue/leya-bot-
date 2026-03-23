@@ -513,7 +513,7 @@ async def guide_dialog(message: types.Message, state: FSMContext):
     day = get_user_day(user_id, guide_key)
     update_activity(user_id, guide_key)
 
-        day = get_user_day(user_id, guide_key)
+    day = get_user_day(user_id, guide_key)
 
 # переключение проводника
 guide_key = get_current_guide_for_day(day)
