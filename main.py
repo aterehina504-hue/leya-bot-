@@ -520,8 +520,20 @@ guide_key = get_current_guide_for_day(day)
 
    # ===== сценарный старт =====
 
-if message_count == 0:
-    await message.answer(build_progress_text(day))
+@dp.message(UserState.GUIDE_ACTIVE)
+async def guide_dialog(message: types.Message, state: FSMContext):
+
+    data = await state.get_data()
+    user_id = message.from_user.id
+    guide_key = data.get("active_guide")
+
+    day = get_user_day(user_id, guide_key)
+
+    message_count = int(data.get("message_count_in_session", 0))
+
+    # ✅ ВОТ ЗДЕСЬ МОЖНО
+    if message_count == 0:
+        await message.answer(build_progress_text(day))
    
     # увеличиваем счетчик
     message_count += 1
