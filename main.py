@@ -38,7 +38,11 @@ from gpt import ask_guide
 MAX_HISTORY = 6
 REMINDER_CHECK_INTERVAL = 60 * 60          # 1 час
 REMINDER_BEFORE_SECONDS = 24 * 60 * 60     # за 24 часа
-SUBSCRIPTION_PERIOD_SECONDS = 2592000      # 30 дней для recurring Stars
+SUBSCRIPTION_PERIOD_SECONDS = 2592000      # 30 дней recurring Stars
+
+# Paywall-триггер
+TRIAL_PAYWALL_AFTER_MESSAGES = 3
+DEEP_PAYWALL_AFTER_MESSAGES = 5
 
 # ======================
 # ENV
@@ -58,7 +62,6 @@ if not BOT_TOKEN:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-
 # ======================
 # STATES
 # ======================
@@ -69,10 +72,153 @@ class UserState(StatesGroup):
 
 
 # ======================
+# MARKETING COPY / FUNNEL
+# ======================
+
+WELCOME_TEXT = (
+    "Ты не сломана.\n"
+    "Ты просто давно не слышала себя.\n\n"
+    "Здесь ты можешь:\n"
+    "— разобраться в своих чувствах\n"
+    "— понять, чего ты хочешь\n"
+    "— перестать быть удобной\n"
+    "— вернуть внутреннюю опору\n\n"
+    "Выбери проводника, с которым хочешь пройти этот этап 🤍"
+)
+
+GUIDE_COPY = {
+    "leya": {
+        "name": "Лея",
+        "emoji": "🤍",
+        "focus": "вернуться к себе и снова услышать свои чувства",
+        "result": "ты уже начала лучше слышать себя",
+        "pain": "ты снова можешь отложить себя на потом",
+    },
+    "amira": {
+        "name": "Амира",
+        "emoji": "🌼",
+        "focus": "вернуть уважение к себе и укрепить границы",
+        "result": "ты уже начала по-другому относиться к себе",
+        "pain": "ты снова можешь поставить себя не на первое место",
+    },
+    "elira": {
+        "name": "Элира",
+        "emoji": "🌸",
+        "focus": "снова услышать свои желания и живой отклик",
+        "result": "ты уже начала лучше слышать свои желания",
+        "pain": "ты снова можешь заглушить своё «хочу»",
+    },
+    "nera": {
+        "name": "Нера",
+        "emoji": "🔥",
+        "focus": "вернуть внутреннюю опору и почувствовать свою силу",
+        "result": "ты уже начала возвращать внутреннюю опору",
+        "pain": "ты снова можешь остаться с этим напряжением одна",
+    },
+}
+
+RETENTION_MESSAGES = {
+    "pre_expiry_24h": [
+        "Ты только начала слышать себя.\n\nСейчас самый важный момент — не остановиться.",
+        "Ты уже не в той точке, где была в начале.\n\nВажно не потерять этот контакт с собой.",
+    ],
+    "expired": [
+        "Твой доступ завершился.\n\nНо твой процесс не закончился.",
+        "Жаль обрывать этот путь именно сейчас.\n\nТы уже начала важный внутренний процесс.",
+    ],
+}
+
+
+# ======================
 # HELPERS
 # ======================
+
 def stars_text(amount: int) -> str:
     return f"{amount // 100} ⭐"
+
+
+def format_dt(ts: int | None) -> str:
+    if not ts:
+        return "—"
+    return datetime.fromtimestamp(ts).strftime("%d.%m.%Y %H:%M")
+
+
+def get_plan_by_code(guide_key: str, plan_code: str, user_id: int):
+    prices = PRICE_EXPERIMENTS[guide_key]
+    if plan_code == "7d":
+        ab_group = get_ab_group(user_id, guide_key)
+        return prices[ab_group], ab_group
+    return prices[plan_code], None
+
+
+def build_trial_paywall_text(guide_key: str, user_id: int) -> str:
+    g = GUIDE_COPY[guide_key]
+    p7, _ = get_plan_by_code(guide_key, "7d", user_id)
+    pm, _ = get_plan_by_code(guide_key, "monthly", user_id)
+    pr, _ = get_plan_by_code(guide_key, "recurring", user_id)
+
+    return (
+        f"{g['emoji']} Ты сейчас коснулась важного.\n\n"
+        f"Обычно именно в этом месте мы снова откладываем себя на потом.\n"
+        f"Но ты уже начала путь, где можешь {g['focus']}.\n\n"
+        f"Выбери формат, который тебе сейчас подходит:\n\n"
+        f"— {p7['label']} • мягко пойти глубже уже сейчас\n"
+        f"— {pm['label']} • для более устойчивого результата\n"
+        f"— {pr['label']} • самый выгодный способ не прерываться\n\n"
+        f"Ты не обязана разбираться со всем одна."
+    )
+
+
+def build_deep_paywall_text(guide_key: str, user_id: int) -> str:
+    g = GUIDE_COPY[guide_key]
+    p7, _ = get_plan_by_code(guide_key, "7d", user_id)
+    pm, _ = get_plan_by_code(guide_key, "monthly", user_id)
+    pr, _ = get_plan_by_code(guide_key, "recurring", user_id)
+
+    return (
+        f"{g['emoji']} Ты сейчас сказала очень важную вещь.\n\n"
+        f"И здесь есть два пути:\n"
+        f"— снова закрыть это и {g['pain']}\n"
+        f"— или пойти глубже и правда разобраться с тем, что внутри\n\n"
+        f"Я могу быть рядом в этом процессе.\n\n"
+        f"Выбери формат, который тебе сейчас подходит:\n\n"
+        f"— {p7['label']} • начать уже сейчас\n"
+        f"— {pm['label']} • пройти глубже и не обрываться\n"
+        f"— {pr['label']} • самый выгодный формат продолжения"
+    )
+
+
+def build_renewal_paywall_text(guide_key: str, user_id: int) -> str:
+    g = GUIDE_COPY[guide_key]
+    p7, _ = get_plan_by_code(guide_key, "7d", user_id)
+    pm, _ = get_plan_by_code(guide_key, "monthly", user_id)
+    pr, _ = get_plan_by_code(guide_key, "recurring", user_id)
+
+    return (
+        f"{g['emoji']} {g['result']}.\n\n"
+        f"Самое ценное сейчас — не потерять этот контакт с собой.\n\n"
+        f"Продолжить можно так:\n\n"
+        f"— {pm['label']} • мягкое продолжение без обрыва\n"
+        f"— {pr['label']} • выгоднее и проще не прерываться\n"
+        f"— {p7['label']} • если хочешь продлить пока только на неделю"
+    )
+
+
+def build_expired_paywall_text(guide_key: str, user_id: int) -> str:
+    g = GUIDE_COPY[guide_key]
+    p7, _ = get_plan_by_code(guide_key, "7d", user_id)
+    pm, _ = get_plan_by_code(guide_key, "monthly", user_id)
+    pr, _ = get_plan_by_code(guide_key, "recurring", user_id)
+
+    return (
+        f"{g['emoji']} Твой доступ завершился, но твой процесс не закончился.\n\n"
+        f"Ты уже начала путь, где можешь {g['focus']}.\n"
+        f"Жаль терять это именно сейчас.\n\n"
+        f"Вернуться можно так:\n\n"
+        f"— {p7['label']} • мягко вернуться на неделю\n"
+        f"— {pm['label']} • продолжить глубже и стабильнее\n"
+        f"— {pr['label']} • самый удобный формат, чтобы не выпадать"
+    )
 
 
 def guides_keyboard() -> InlineKeyboardMarkup:
@@ -143,10 +289,69 @@ def tariffs_keyboard(user_id: int, guide_key: str) -> InlineKeyboardMarkup:
     )
 
 
-def expired_keyboard(guide_key: str) -> InlineKeyboardMarkup:
+def paywall_keyboard(user_id: int, guide_key: str, renewal: bool = False) -> InlineKeyboardMarkup:
+    ab_group = get_ab_group(user_id, guide_key)
+    prices = PRICE_EXPERIMENTS[guide_key]
+
+    rows = []
+    if renewal:
+        rows.append([
+            InlineKeyboardButton(
+                text=f"🌙 {prices['monthly']['label']}",
+                callback_data=f"buy:{guide_key}:monthly"
+            )
+        ])
+        rows.append([
+            InlineKeyboardButton(
+                text=f"🔁 {prices['recurring']['label']}",
+                callback_data=f"sub:{guide_key}:recurring"
+            )
+        ])
+        rows.append([
+            InlineKeyboardButton(
+                text=f"💎 {prices[ab_group]['label']}",
+                callback_data=f"buy:{guide_key}:{ab_group}"
+            )
+        ])
+    else:
+        rows.append([
+            InlineKeyboardButton(
+                text=f"💎 {prices[ab_group]['label']}",
+                callback_data=f"buy:{guide_key}:{ab_group}"
+            )
+        ])
+        rows.append([
+            InlineKeyboardButton(
+                text=f"🌙 {prices['monthly']['label']}",
+                callback_data=f"buy:{guide_key}:monthly"
+            )
+        ])
+        rows.append([
+            InlineKeyboardButton(
+                text=f"🔁 {prices['recurring']['label']}",
+                callback_data=f"sub:{guide_key}:recurring"
+            )
+        ])
+
+    rows.append([
+        InlineKeyboardButton(
+            text="🌿 Вернуться к проводнику",
+            callback_data=f"guide_{guide_key}"
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def expired_keyboard(user_id: int, guide_key: str) -> InlineKeyboardMarkup:
+    ab_group = get_ab_group(user_id, guide_key)
+    prices = PRICE_EXPERIMENTS[guide_key]
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="💎 Продлить доступ", callback_data=f"tariffs_{guide_key}")],
+            [InlineKeyboardButton(text=f"💎 {prices[ab_group]['label']}", callback_data=f"buy:{guide_key}:{ab_group}")],
+            [InlineKeyboardButton(text=f"🌙 {prices['monthly']['label']}", callback_data=f"buy:{guide_key}:monthly")],
+            [InlineKeyboardButton(text=f"🔁 {prices['recurring']['label']}", callback_data=f"sub:{guide_key}:recurring")],
             [InlineKeyboardButton(text="🌿 К выбору проводника", callback_data="back_to_guides")],
         ]
     )
@@ -207,10 +412,21 @@ async def edit_user_star_subscription(user_id: int, telegram_payment_charge_id: 
                 raise RuntimeError(str(data))
 
 
-def format_dt(ts: int | None) -> str:
-    if not ts:
-        return "—"
-    return datetime.fromtimestamp(ts).strftime("%d.%m.%Y %H:%M")
+def user_has_paid_access(user_id: int, guide_key: str) -> bool:
+    exp = get_expires(user_id, guide_key)
+    return bool(exp and exp > time.time())
+
+
+def should_show_trial_paywall(message_count: int, trial_active: bool, is_paid: bool) -> bool:
+    if is_paid:
+        return False
+    return trial_active and message_count >= TRIAL_PAYWALL_AFTER_MESSAGES
+
+
+def should_show_deep_paywall(message_count: int, trial_active: bool, is_paid: bool) -> bool:
+    if is_paid:
+        return False
+    return trial_active and message_count >= DEEP_PAYWALL_AFTER_MESSAGES
 
 
 # ======================
@@ -219,9 +435,15 @@ def format_dt(ts: int | None) -> str:
 @dp.message(CommandStart())
 async def start(message: types.Message, state: FSMContext):
     await state.set_state(UserState.SELECT_GUIDE)
-    await state.update_data(history=[])
+    await state.update_data(
+        history=[],
+        active_guide=None,
+        trial_active=False,
+        message_count_in_session=0,
+        paywall_stage=None,
+    )
     await message.answer(
-        "Я рядом 🤍\n\nВыбери проводника:",
+        WELCOME_TEXT,
         reply_markup=guides_keyboard()
     )
 
@@ -241,10 +463,16 @@ async def select_guide(callback: types.CallbackQuery, state: FSMContext):
         return
 
     await state.set_state(UserState.GUIDE_MENU)
-    await state.update_data(active_guide=guide_key, history=[])
+    await state.update_data(
+        active_guide=guide_key,
+        history=[],
+        message_count_in_session=0,
+        paywall_stage=None,
+    )
 
+    intro_text = guide.get("intro_text") or guide.get("menu_text") or "Я рядом."
     await callback.message.answer(
-        f"{guide['title']}\n\n{guide['menu_text']}",
+        f"{guide['title']}\n\n{intro_text}",
         reply_markup=guide_menu_keyboard(guide_key)
     )
 
@@ -253,7 +481,13 @@ async def select_guide(callback: types.CallbackQuery, state: FSMContext):
 async def back_to_guides(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     await state.set_state(UserState.SELECT_GUIDE)
-    await state.update_data(active_guide=None, history=[])
+    await state.update_data(
+        active_guide=None,
+        history=[],
+        trial_active=False,
+        message_count_in_session=0,
+        paywall_stage=None,
+    )
     await callback.message.answer(
         "Выбери проводника 🤍",
         reply_markup=guides_keyboard()
@@ -276,7 +510,13 @@ async def start_test(callback: types.CallbackQuery, state: FSMContext):
     add_days(callback.from_user.id, guide_key, 1)
 
     await state.set_state(UserState.GUIDE_ACTIVE)
-    await state.update_data(active_guide=guide_key, history=[])
+    await state.update_data(
+        active_guide=guide_key,
+        history=[],
+        trial_active=True,
+        message_count_in_session=0,
+        paywall_stage=None,
+    )
 
     await callback.message.answer(guide["test_text"])
 
@@ -285,7 +525,7 @@ async def start_test(callback: types.CallbackQuery, state: FSMContext):
 # TARIFFS
 # ======================
 @dp.callback_query(F.data.startswith("tariffs_"))
-async def show_tariffs(callback: types.CallbackQuery):
+async def show_tariffs(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
     guide_key = callback.data.replace("tariffs_", "")
@@ -293,9 +533,16 @@ async def show_tariffs(callback: types.CallbackQuery):
         await callback.message.answer("Проводник не найден.")
         return
 
+    data = await state.get_data()
+    trial_active = bool(data.get("trial_active"))
+
+    text = build_trial_paywall_text(guide_key, callback.from_user.id)
+    if not trial_active and has_subscription(callback.from_user.id, guide_key):
+        text = build_renewal_paywall_text(guide_key, callback.from_user.id)
+
     await callback.message.answer(
-        "Выбери формат доступа 🤍",
-        reply_markup=tariffs_keyboard(callback.from_user.id, guide_key)
+        text,
+        reply_markup=paywall_keyboard(callback.from_user.id, guide_key, renewal=has_subscription(callback.from_user.id, guide_key))
     )
 
 
@@ -313,10 +560,16 @@ async def buy(callback: types.CallbackQuery):
         await callback.message.answer("Тариф не найден.")
         return
 
+    description = f"Доступ на {tariff['days']} дней"
+    if tariff_key == "monthly":
+        description = "Доступ на 30 дней"
+    elif tariff_key in {"A", "B"}:
+        description = f"Доступ на {tariff['days']} дней"
+
     await bot.send_invoice(
         chat_id=callback.from_user.id,
         title=GUIDES[guide_key]["title"],
-        description=f"Доступ на {tariff['days']} дней",
+        description=description,
         payload=f"buy:{guide_key}:{tariff_key}",
         provider_token="",
         currency="XTR",
@@ -351,7 +604,8 @@ async def recurring_subscribe(callback: types.CallbackQuery):
     )
 
     await callback.message.answer(
-        "Автоподписка оформляется по ссылке Telegram 🤍\n\n"
+        "Автоподписка оформляется через Telegram 🤍\n\n"
+        "Это самый удобный формат, чтобы не выпадать из процесса.\n"
         "После первой оплаты Telegram будет продлевать доступ автоматически каждые 30 дней.",
         reply_markup=kb
     )
@@ -452,11 +706,22 @@ async def successful_payment(message: types.Message, state: FSMContext):
         new_exp = add_days(message.from_user.id, guide_key, days)
 
         await state.set_state(UserState.GUIDE_ACTIVE)
-        await state.update_data(active_guide=guide_key, history=[])
+        await state.update_data(
+            active_guide=guide_key,
+            history=[],
+            trial_active=False,
+            message_count_in_session=0,
+            paywall_stage=None,
+        )
+
+        after_payment_text = GUIDES[guide_key].get("after_payment") or (
+            f"💎 Оплата прошла!\n\n"
+            f"Доступ активирован до {format_dt(new_exp)}.\n\n"
+            f"Ты здесь. И это уже шаг к себе 🤍"
+        )
 
         await message.answer(
-            f"💎 Оплата прошла!\n"
-            f"Доступ активирован до {format_dt(new_exp)} 🤍"
+            f"{after_payment_text}\n\nДоступ до {format_dt(new_exp)}"
         )
         return
 
@@ -474,11 +739,18 @@ async def successful_payment(message: types.Message, state: FSMContext):
         )
 
         await state.set_state(UserState.GUIDE_ACTIVE)
-        await state.update_data(active_guide=guide_key, history=[])
+        await state.update_data(
+            active_guide=guide_key,
+            history=[],
+            trial_active=False,
+            message_count_in_session=0,
+            paywall_stage=None,
+        )
 
         await message.answer(
-            f"🔁 Автоподписка активирована!\n"
-            f"Текущий период до {format_dt(sub_exp)} 🤍",
+            f"🔁 Автоподписка активирована!\n\n"
+            f"Текущий период до {format_dt(sub_exp)}.\n"
+            f"Это самый удобный формат, чтобы не выпадать из процесса 🤍",
             reply_markup=recurring_manage_keyboard(guide_key, active=True)
         )
         return
@@ -505,13 +777,18 @@ async def guide_dialog(message: types.Message, state: FSMContext):
 
     expires = get_expires(message.from_user.id, guide_key)
     if not expires or expires <= time.time():
+        await state.update_data(trial_active=False)
         await message.answer(
-            "⏳ Доступ завершён.\n\nТы можешь продолжить путь 🤍",
-            reply_markup=expired_keyboard(guide_key)
+            build_expired_paywall_text(guide_key, message.from_user.id),
+            reply_markup=expired_keyboard(message.from_user.id, guide_key)
         )
         return
 
     history = data.get("history", [])
+    trial_active = bool(data.get("trial_active"))
+    paywall_stage = data.get("paywall_stage")
+    message_count = int(data.get("message_count_in_session", 0)) + 1
+
     temp_history = history + [{"role": "user", "content": message.text}]
 
     reply = await ask_guide(
@@ -522,8 +799,39 @@ async def guide_dialog(message: types.Message, state: FSMContext):
 
     history = (temp_history + [{"role": "assistant", "content": reply}])[-MAX_HISTORY:]
 
-    await state.update_data(history=history)
+    await state.update_data(
+        history=history,
+        message_count_in_session=message_count
+    )
+
     await message.answer(reply)
+
+    # ========= PAYWALL ВНУТРИ ДИАЛОГА =========
+    # Если триал активен, показываем paywall после нескольких сообщений.
+    if should_show_trial_paywall(
+        message_count=message_count,
+        trial_active=trial_active,
+        is_paid=False,  # здесь triал тоже не считаем платным
+    ) and paywall_stage is None:
+        await asyncio.sleep(0.4)
+        await message.answer(
+            build_trial_paywall_text(guide_key, message.from_user.id),
+            reply_markup=paywall_keyboard(message.from_user.id, guide_key, renewal=False)
+        )
+        await state.update_data(paywall_stage="trial_shown")
+        return
+
+    if should_show_deep_paywall(
+        message_count=message_count,
+        trial_active=trial_active,
+        is_paid=False,
+    ) and paywall_stage == "trial_shown":
+        await asyncio.sleep(0.4)
+        await message.answer(
+            build_deep_paywall_text(guide_key, message.from_user.id),
+            reply_markup=paywall_keyboard(message.from_user.id, guide_key, renewal=False)
+        )
+        await state.update_data(paywall_stage="deep_shown")
 
 
 # ======================
@@ -540,7 +848,6 @@ async def status_cmd(message: types.Message, state: FSMContext):
 
     expires = get_expires(message.from_user.id, guide_key)
     info = get_recurring_info(message.from_user.id, guide_key)
-
     recurring_active = bool(info["recurring_active"]) if info else False
 
     await message.answer(
@@ -549,6 +856,21 @@ async def status_cmd(message: types.Message, state: FSMContext):
         f"Автопродление: {'включено' if recurring_active else 'выключено'}",
         reply_markup=recurring_manage_keyboard(guide_key, recurring_active)
         if info and info["recurring_charge_id"] else None
+    )
+
+
+@dp.message(Command("tariffs"))
+async def tariffs_cmd(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    guide_key = data.get("active_guide")
+
+    if not guide_key:
+        await message.answer("Сначала выбери проводника 🤍", reply_markup=guides_keyboard())
+        return
+
+    await message.answer(
+        build_trial_paywall_text(guide_key, message.from_user.id),
+        reply_markup=paywall_keyboard(message.from_user.id, guide_key, renewal=False)
     )
 
 
@@ -650,6 +972,15 @@ async def broadcast(message: types.Message):
 # REMINDERS
 # ======================
 async def reminder_worker():
+    """
+    Сейчас worker использует только существующий storage API:
+    get_users_for_reminder(REMINDER_BEFORE_SECONDS)
+
+    То есть он работает на продление перед окончанием доступа.
+    Для полноценного inactive / expired winback дальше стоит добавить в storage:
+    - get_users_for_inactive_return(...)
+    - get_users_for_expired_winback(...)
+    """
     while True:
         try:
             rows = get_users_for_reminder(REMINDER_BEFORE_SECONDS)
@@ -657,24 +988,26 @@ async def reminder_worker():
             for row in rows:
                 guide_key = row["guide_key"]
                 recurring_active = bool(row["recurring_active"])
+                user_id = row["user_id"]
 
                 if recurring_active:
                     text = (
-                        f"Напоминаю: доступ к {GUIDES[guide_key]['title']} "
-                        f"скоро продлится автоматически, если на балансе Stars достаточно средств 🤍"
+                        f"{GUIDE_COPY[guide_key]['emoji']} Напоминаю: доступ к {GUIDES[guide_key]['title']} "
+                        f"скоро продлится автоматически, если на балансе Stars достаточно средств.\n\n"
+                        f"Ты уже в процессе — хорошо бы его не обрывать 🤍"
                     )
                     reply_markup = recurring_manage_keyboard(guide_key, active=True)
                 else:
+                    base = RETENTION_MESSAGES["pre_expiry_24h"][user_id % len(RETENTION_MESSAGES["pre_expiry_24h"])]
                     text = (
-                        f"Напоминаю: доступ к {GUIDES[guide_key]['title']} "
-                        f"закончится меньше чем через 24 часа 🤍\n\n"
-                        f"Чтобы не прерывать путь, продли доступ заранее."
+                        f"{GUIDE_COPY[guide_key]['emoji']} {base}\n\n"
+                        f"{build_renewal_paywall_text(guide_key, user_id)}"
                     )
-                    reply_markup = expired_keyboard(guide_key)
+                    reply_markup = paywall_keyboard(user_id, guide_key, renewal=True)
 
                 try:
-                    await bot.send_message(row["user_id"], text, reply_markup=reply_markup)
-                    mark_reminded(row["user_id"], guide_key)
+                    await bot.send_message(user_id, text, reply_markup=reply_markup)
+                    mark_reminded(user_id, guide_key)
                     await asyncio.sleep(0.05)
                 except Exception:
                     pass
