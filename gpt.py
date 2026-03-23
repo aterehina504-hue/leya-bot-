@@ -1,10 +1,12 @@
-import openai
+from openai import AsyncOpenAI
 import os
+import random
+from typing import Optional, List, Dict
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 async def ask_guide(guide_key, message, history):
-    response = await openai.ChatCompletion.acreate(
+    response = await client.chat.completions.create(
         model="gpt-4o-mini",
         messages=history + [{"role": "user", "content": message}],
         temperature=0.8,
