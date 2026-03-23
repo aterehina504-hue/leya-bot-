@@ -38,9 +38,34 @@ from paths import PATH_DAYS
 from insights import INSIGHT_TEMPLATES
 from storage import get_user_day, update_activity
 
+# ===== JOURNEY =====
+JOURNEY_MAP = {
+    1: "leya",
+    2: "leya",
+    3: "amira",
+    4: "amira",
+    5: "elira",
+    6: "nera",
+    7: "nera",
+}
+
+def get_current_guide_for_day(day: int) -> str:
+    return JOURNEY_MAP.get(day, "nera")
+
+def build_progress_text(day: int) -> str:
+    total = 7
+    filled = "●" * day
+    empty = "○" * (total - day)
+
+    return (
+        f"Твой путь: {filled}{empty} ({day}/{total})\n"
+        f"Ты уже в процессе. Не останавливайся 🤍"
+    )
+    
 # ======================
 # CONFIG
 # ======================
+
 MAX_HISTORY = 6
 REMINDER_CHECK_INTERVAL = 60 * 60          # 1 час
 REMINDER_BEFORE_SECONDS = 24 * 60 * 60     # за 24 часа
@@ -488,15 +513,35 @@ async def guide_dialog(message: types.Message, state: FSMContext):
     day = get_user_day(user_id, guide_key)
     update_activity(user_id, guide_key)
 
-    # ===== сценарный старт =====
-    if message_count == 0:
-        if guide_key in PATH_DAYS and day in PATH_DAYS[guide_key]:
-            await message.answer(
-                random.choice(PATH_DAYS[guide_key][day])
-            )
+        day = get_user_day(user_id, guide_key)
 
+# переключение проводника
+guide_key = get_current_guide_for_day(day)
+
+    # ===== сценарный старт =====
+if message_count == 0:
+    await message.answer(build_progress_text(day))
     # увеличиваем счетчик
     message_count += 1
+
+prev_day = day - 1
+prev_guide = get_current_guide_for_day(prev_day)
+
+if day > 1 and prev_guide != guide_key and message_count == 0:
+    await message.answer(
+        f"Сегодня с тобой будет {GUIDES[guide_key]['title']}.\n\n"
+        f"Это следующий этап твоего пути 🤍"
+    )
+
+if day == 7 and message_count >= 2:
+    await message.answer(
+        "Ты прошла этот путь.\n\n"
+        "Но самое важное только начинается.\n\n"
+        "Можно остановиться здесь.\n"
+        "Или пойти туда, где начинается реальное изменение.\n\n"
+        "Ты уже очень близко.",
+        reply_markup=paywall_keyboard(user_id, guide_key, renewal=True)
+    )
 
     # ===== GPT =====
     temp_history = history + [{"role": "user", "content": message.text}]
@@ -531,6 +576,38 @@ async def guide_dialog(message: types.Message, state: FSMContext):
             "Хочешь продолжить?",
             reply_markup=paywall_keyboard(user_id, guide_key, renewal=False)
         )
+
+trigger_phrases = [
+    "я запуталась",
+    "мне тяжело",
+    "я устала",
+    "мне больно",
+    "я потеряла себя",
+]
+
+if any(p in message.text.lower() for p in trigger_phrases):
+    if not user_has_paid_access(user_id, guide_key):
+        await asyncio.sleep(0.5)
+
+        await message.answer(
+            "Ты сейчас коснулась важного.\n\n"
+            "И именно в такие моменты всё обычно закрывается обратно.\n\n"
+            "Но ты уже начала видеть глубже.",
+            reply_markup=paywall_keyboard(user_id, guide_key)
+        )
+
+await asyncio.sleep(10)
+
+await message.answer(
+    "Я могу провести тебя через это глубже.\n"
+    "Не обязательно оставаться с этим одной."
+)
+
+if message_count == 4:
+    await message.answer(
+        "Ты уже вложилась в этот процесс.\n"
+        "Это не то, что хочется бросать."
+    )
 
     # ========= PAYWALL ВНУТРИ ДИАЛОГА =========
     if should_show_trial_paywall(
@@ -915,6 +992,43 @@ async def guide_dialog(message: types.Message, state: FSMContext):
     )
 
     await message.answer(reply)
+
+    def detect_depth(text: str) -> int:
+    t = text.lower()
+
+    if any(x in t for x in ["потеряла себя", "сломалась", "очень больно"]):
+        return 2
+
+    if any(x in t for x in ["устала", "тяжело", "запуталась"]):
+        return 1
+
+    return 0
+
+    depth = detect_depth(message.text)
+data = await state.get_data()
+
+new_depth = max(depth, data.get("depth_level", 0))
+
+await state.update_data(depth_level=new_depth)
+
+if new_depth == 2 and not user_has_paid_access(user_id, guide_key):
+    await message.answer(
+        "Ты сейчас в очень важной точке.\n\n"
+        "Обычно именно здесь всё закрывается.\n\n"
+        "Но можно пойти дальше.",
+        reply_markup=paywall_keyboard(user_id, guide_key)
+    )
+
+    if random.random() < 0.3:
+    await message.answer("Я рядом с тобой в этом процессе.")
+
+    hooks = [
+    "Там есть ещё глубже.",
+    "Мы только начали это раскрывать.",
+]
+
+if random.random() < 0.35:
+    await message.answer(random.choice(hooks))
 
     # ========= PAYWALL ВНУТРИ ДИАЛОГА =========
     # Если триал активен, показываем paywall после нескольких сообщений.
