@@ -485,6 +485,7 @@ async def guide_dialog(message: types.Message, state: FSMContext):
         return
 
     data = await state.get_data()
+    user_id = message.from_user.id
     guide_key = data.get("active_guide")
 
     if not guide_key:
@@ -492,9 +493,7 @@ async def guide_dialog(message: types.Message, state: FSMContext):
         await message.answer("Выбери проводника 🤍", reply_markup=guides_keyboard())
         return
 
-    user_id = message.from_user.id
-
-    # ===== проверка доступа =====
+    # ===== доступ =====
     expires = get_expires(user_id, guide_key)
     if not expires or expires <= time.time():
         await state.update_data(trial_active=False)
@@ -509,53 +508,103 @@ async def guide_dialog(message: types.Message, state: FSMContext):
     paywall_stage = data.get("paywall_stage")
     message_count = int(data.get("message_count_in_session", 0))
 
-    # ===== день пользователя =====
+    # ===== путь =====
     day = get_user_day(user_id, guide_key)
     update_activity(user_id, guide_key)
 
-    day = get_user_day(user_id, guide_key)
+    guide_key = get_current_guide_for_day(day)
 
-   # переключение проводника
-guide_key = get_current_guide_for_day(day)
-
-   # ===== сценарный старт =====
-
-@dp.message(UserState.GUIDE_ACTIVE)
-async def guide_dialog(message: types.Message, state: FSMContext):
-
-    data = await state.get_data()
-    user_id = message.from_user.id
-    guide_key = data.get("active_guide")
-
-    day = get_user_day(user_id, guide_key)
-
-    message_count = int(data.get("message_count_in_session", 0))
-
-    # ✅ ВОТ ЗДЕСЬ МОЖНО
     if message_count == 0:
         await message.answer(build_progress_text(day))
-   
+
+        prev_day = day - 1
+        prev_guide = get_current_guide_for_day(prev_day)
+
+        if day > 1 and prev_guide != guide_key:
+            await message.answer(
+                f"Сегодня с тобой будет {GUIDES[guide_key]['title']}.\n\n"
+                f"Это следующий этап твоего пути 🤍"
+            )
+
     # увеличиваем счетчик
     message_count += 1
 
-prev_day = day - 1
-prev_guide = get_current_guide_for_day(prev_day)
+    # ===== GPT =====
+    temp_history = history + [{"role": "user", "content": message.text}]
 
-if day > 1 and prev_guide != guide_key and message_count == 0:
-    await message.answer(
-        f"Сегодня с тобой будет {GUIDES[guide_key]['title']}.\n\n"
-        f"Это следующий этап твоего пути 🤍"
+    reply = await ask_guide(
+        guide_key=guide_key,
+        message=message.text,
+        history=temp_history
     )
 
-if day == 7 and message_count >= 2:
-    await message.answer(
-        "Ты прошла этот путь.\n\n"
-        "Но самое важное только начинается.\n\n"
-        "Можно остановиться здесь.\n"
-        "Или пойти туда, где начинается реальное изменение.\n\n"
-        "Ты уже очень близко.",
-        reply_markup=paywall_keyboard(user_id, guide_key, renewal=True)
+    history = (temp_history + [{"role": "assistant", "content": reply}])[-MAX_HISTORY:]
+
+    await state.update_data(
+        history=history,
+        message_count_in_session=message_count
     )
+
+    await message.answer(reply)
+
+    # ===== эмоции =====
+    if random.random() < 0.25:
+        await message.answer("Я рядом с тобой в этом")
+
+    if random.random() < 0.3:
+        await message.answer("Там есть ещё глубже.")
+
+    # ===== триггер =====
+    trigger_phrases = ["запуталась", "тяжело", "устала", "больно"]
+
+    if any(p in message.text.lower() for p in trigger_phrases):
+        if not user_has_paid_access(user_id, guide_key):
+            await asyncio.sleep(0.5)
+            await message.answer(
+                "Ты сейчас коснулась важного.\n\n"
+                "Важно не остановиться здесь.",
+                reply_markup=paywall_keyboard(user_id, guide_key)
+            )
+
+    # ===== вклад =====
+    if message_count == 4:
+        await message.answer(
+            "Ты уже вложилась в этот процесс.\n"
+            "Не хочется обрывать это сейчас."
+        )
+
+    # ===== день 7 =====
+    if day == 7 and message_count >= 2:
+        await message.answer(
+            "Ты прошла путь.\n\n"
+            "Но самое важное только начинается.\n\n"
+            "Ты очень близко.",
+            reply_markup=paywall_keyboard(user_id, guide_key, renewal=True)
+        )
+
+    # ===== стандартный paywall =====
+    if should_show_trial_paywall(
+        message_count=message_count,
+        trial_active=trial_active,
+        is_paid=False,
+    ) and paywall_stage is None:
+        await message.answer(
+            build_trial_paywall_text(guide_key, user_id),
+            reply_markup=paywall_keyboard(user_id, guide_key)
+        )
+        await state.update_data(paywall_stage="trial_shown")
+        return
+
+    if should_show_deep_paywall(
+        message_count=message_count,
+        trial_active=trial_active,
+        is_paid=False,
+    ) and paywall_stage == "trial_shown":
+        await message.answer(
+            build_deep_paywall_text(guide_key, user_id),
+            reply_markup=paywall_keyboard(user_id, guide_key)
+        )
+        await state.update_data(paywall_stage="deep_shown")
 
     # ===== GPT =====
     temp_history = history + [{"role": "user", "content": message.text}]
