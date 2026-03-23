@@ -1,7 +1,7 @@
 from openai import AsyncOpenAI
 import os
-import random
 from typing import Optional, List, Dict
+import random
 
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -13,6 +13,18 @@ async def ask_guide(guide_key, message, history):
         max_tokens=400,
     )
     return response.choices[0].message.content
+
+def detect_intent(text: str) -> str:
+    t = text.lower()
+
+    if "устала" in t:
+        return "burnout"
+    if "отношения" in t or "люблю" in t:
+        return "relationship"
+    if "не понимаю" in t:
+        return "identity"
+
+    return "general"
 
 # ======================
 # SYSTEM PROMPTS
@@ -32,6 +44,13 @@ BASE_RULES = """
 — не превращай ответ в длинную лекцию
 — не давай много советов списком
 — не дави и не морализируй
+
+Когда пользователь приближается к важному моменту:
+
+— мягко намекни, что есть глубже уровень
+— создай ощущение незавершённости
+— не продавай напрямую
+— дай почувствовать, что ты можешь провести дальше
 
 Как отвечать:
 — сначала мягко отрази состояние или суть переживания
@@ -281,16 +300,36 @@ async def ask(
     history: Optional[List[Dict[str, str]]] = None,
     max_tokens: int = 400,
 ) -> str:
+
+    intent = detect_intent(user_message)
+
     response = await client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=_build_messages(system_prompt, user_message, history),
+        messages=[
+            {
+                "role": "system",
+                "content": system_prompt + f"\n\nТип состояния: {intent}"
+            }
+        ] + (history or []) + [{"role": "user", "content": user_message}],
         temperature=0.85,
         max_tokens=max_tokens,
     )
 
     content = response.choices[0].message.content
-    return (content or "").strip()
 
+    return add_soft_sell((content or "").strip())
+
+def add_soft_sell(text: str) -> str:
+    endings = [
+        "\n\nМне кажется, здесь есть глубже.",
+        "\n\nЭто только начало.",
+        "\n\nСамое важное чуть дальше.",
+    ]
+
+    if random.random() < 0.35:
+        return text + random.choice(endings)
+
+    return text
 
 # ======================
 # GUIDES
