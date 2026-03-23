@@ -515,12 +515,14 @@ async def guide_dialog(message: types.Message, state: FSMContext):
 
     day = get_user_day(user_id, guide_key)
 
-# переключение проводника
+   # переключение проводника
 guide_key = get_current_guide_for_day(day)
 
-    # ===== сценарный старт =====
+   # ===== сценарный старт =====
+
 if message_count == 0:
     await message.answer(build_progress_text(day))
+   
     # увеличиваем счетчик
     message_count += 1
 
