@@ -558,7 +558,7 @@ async def guide_dialog(message: types.Message, state: FSMContext):
     trigger_phrases = ["запуталась", "тяжело", "устала", "больно"]
 
     if any(p in message.text.lower() for p in trigger_phrases):
-        if not user_has_paid_access(user_id, guide_key):
+    if not user_has_paid_access(user_id, guide_key):
             await asyncio.sleep(0.5)
             await message.answer(
                 "Ты сейчас коснулась важного.\n\n"
