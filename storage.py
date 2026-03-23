@@ -52,3 +52,38 @@ def get_user_day(user_id, guide_key):
 
         days = int((time.time() - row["path_started_at"]) / 86400) + 1
         return min(days, 7)
+
+def add_days(user_id: int, guide_key: str, days: int):
+    import time
+
+    now = int(time.time())
+
+    current_exp = get_expires(user_id, guide_key)
+
+    # если нет подписки — начинаем с текущего времени
+    if not current_exp or current_exp < now:
+        current_exp = now
+
+    new_exp = current_exp + days * 86400
+
+    # сохраняем (ВАЖНО: должна существовать функция set_expires)
+    set_expires(user_id, guide_key, new_exp)
+
+    return new_exp
+
+def set_expires(user_id: int, guide_key: str, expires_at: int):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        INSERT INTO subscriptions (user_id, guide_key, expires_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(user_id, guide_key)
+        DO UPDATE SET expires_at=excluded.expires_at
+        """,
+        (user_id, guide_key, expires_at)
+    )
+
+    conn.commit()
+    conn.close()
