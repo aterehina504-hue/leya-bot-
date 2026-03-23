@@ -309,7 +309,9 @@ async def ask_elira(message: str, history: Optional[List[Dict[str, str]]] = None
 async def ask_nera(message: str, history: Optional[List[Dict[str, str]]] = None) -> str:
     return await ask(NERA_SYSTEM_PROMPT, message, history=history, max_tokens=420)
 
-
+if random.random() < 0.3:
+    await message.answer(random.choice(ATTACHMENT_PHRASES))
+    
 # ======================
 # ROUTER
 # ======================
