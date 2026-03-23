@@ -1,5 +1,5 @@
-from openai import AsyncOpenAI
-import os
+from typing import Optional, List, Dict
+import random
 
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -308,9 +308,6 @@ async def ask_elira(message: str, history: Optional[List[Dict[str, str]]] = None
 
 async def ask_nera(message: str, history: Optional[List[Dict[str, str]]] = None) -> str:
     return await ask(NERA_SYSTEM_PROMPT, message, history=history, max_tokens=420)
-
-if random.random() < 0.3:
-    await message.answer(random.choice(ATTACHMENT_PHRASES))
     
 # ======================
 # ROUTER
