@@ -231,7 +231,6 @@ GUIDES = {
     },
 }
 
-
 FUNNEL_TEXTS = {
     "welcome": (
         "Ты не сломана.\n"
@@ -284,7 +283,6 @@ FUNNEL_TEXTS = {
     ),
 }
 
-
 DIAGNOSTIC_OPTIONS = {
     "step_1": [
         ("lost", "Потерянность"),
@@ -305,14 +303,12 @@ DIAGNOSTIC_OPTIONS = {
     ],
 }
 
-
 GUIDE_MATCH_RULES = {
     "understand_self": "leya",
     "say_no": "amira",
     "feel_desires": "elira",
     "pull_myself_together": "nera",
 }
-
 
 START_BUTTONS = {
     "start": "Начать",
@@ -356,3 +352,20 @@ PRICE_EXPERIMENTS = {
         "recurring": {"price": 149000, "label": "Автоподписка — 1490 ⭐ / 30 дней"},
     },
 }
+
+from storage import get_user_day, start_user_path
+
+day = get_user_day(message.from_user.id, guide_key)
+
+if data.get("message_count_in_session", 0) == 0:
+    await message.answer(build_progress_text(day))
+
+    if guide_key in PATH_STEPS and day in PATH_STEPS[guide_key]:
+        await message.answer(PATH_STEPS[guide_key][day])
+
+if day == 7:
+    await message.answer(
+        "Ты прошла важный этап.\n\n"
+        "Но это не конец — это только начало более глубокого контакта с собой.\n\n"
+        "Хочешь продолжить?"
+    )
