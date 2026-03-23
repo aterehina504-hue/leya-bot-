@@ -648,11 +648,11 @@ trigger_phrases = [
     "я потеряла себя",
 ]
 
-if any(p in message.text.lower() for p in trigger_phrases):
+    if any(p in message.text.lower() for p in trigger_phrases):
     if not user_has_paid_access(user_id, guide_key):
         await asyncio.sleep(0.5)
 
-        await message.answer(
+await message.answer(
             "Ты сейчас коснулась важного.\n\n"
             "И именно в такие моменты всё обычно закрывается обратно.\n\n"
             "Но ты уже начала видеть глубже.",
