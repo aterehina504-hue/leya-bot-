@@ -478,6 +478,10 @@ async def start(message: types.Message, state: FSMContext):
         reply_markup=guides_keyboard()
     )
 
+# ======================
+# DIALOG
+# ======================
+
 @dp.message(UserState.GUIDE_ACTIVE)
 async def guide_dialog(message: types.Message, state: FSMContext):
     if not message.text:
@@ -522,11 +526,10 @@ async def guide_dialog(message: types.Message, state: FSMContext):
 
         if day > 1 and prev_guide != guide_key:
             await message.answer(
-                f"Сегодня с тобой будет {GUIDES[guide_key]['title']}.\n\n"
-                f"Это следующий этап твоего пути 🤍"
+                f"Сегодня с тобой будет {GUIDES[guide_key]['title']}\n\n"
+                f"Это следующий этап пути 🤍"
             )
 
-    # увеличиваем счетчик
     message_count += 1
 
     # ===== GPT =====
@@ -538,7 +541,7 @@ async def guide_dialog(message: types.Message, state: FSMContext):
         history=temp_history
     )
 
-    history = (temp_history + [{"role": "assistant", "content": reply}])[-MAX_HISTORY:]
+    history = (temp_history + [{"role": "assistant", "content": reply})][-MAX_HISTORY:]
 
     await state.update_data(
         history=history,
@@ -557,14 +560,14 @@ async def guide_dialog(message: types.Message, state: FSMContext):
     # ===== триггер =====
     trigger_phrases = ["запуталась", "тяжело", "устала", "больно"]
 
-if any(p in message.text.lower() for p in trigger_phrases):
-    if not user_has_paid_access(user_id, guide_key):
-        await asyncio.sleep(0.5)
-        await message.answer(
-            "Ты сейчас коснулась важного.\n\n"
-            "Важно не остановиться здесь.",
-            reply_markup=paywall_keyboard(user_id, guide_key)
-        )
+    if any(p in message.text.lower() for p in trigger_phrases):
+        if not user_has_paid_access(user_id, guide_key):
+            await asyncio.sleep(0.5)
+            await message.answer(
+                "Ты сейчас коснулась важного.\n\n"
+                "Важно не остановиться здесь.",
+                reply_markup=paywall_keyboard(user_id, guide_key)
+            )
 
     # ===== вклад =====
     if message_count == 4:
@@ -582,7 +585,7 @@ if any(p in message.text.lower() for p in trigger_phrases):
             reply_markup=paywall_keyboard(user_id, guide_key, renewal=True)
         )
 
-    # ===== стандартный paywall =====
+    # ===== paywall =====
     if should_show_trial_paywall(
         message_count=message_count,
         trial_active=trial_active,
@@ -603,98 +606,6 @@ if any(p in message.text.lower() for p in trigger_phrases):
         await message.answer(
             build_deep_paywall_text(guide_key, user_id),
             reply_markup=paywall_keyboard(user_id, guide_key)
-        )
-        await state.update_data(paywall_stage="deep_shown")
-
-    # ===== GPT =====
-    temp_history = history + [{"role": "user", "content": message.text}]
-
-    reply = await ask_guide(
-        guide_key=guide_key,
-        message=message.text,
-        history=temp_history
-    )
-
-    history = (temp_history + [{"role": "assistant", "content": reply}])[-MAX_HISTORY:]
-
-    await state.update_data(
-        history=history,
-        message_count_in_session=message_count
-    )
-
-    await message.answer(reply)
-
-    # ===== инсайт =====
-    if random.random() < 0.2:
-        await message.answer("Как будто это повторяется в твоей жизни")
-
-    # ===== привязанность =====
-    if random.random() < 0.25:
-        await message.answer("Я рядом с тобой в этом")
-
-    # ===== day-based paywall =====
-    if day == 3 and message_count >= 2:
-        await message.answer(
-            "Ты сейчас очень близко к тому, чтобы разобраться.\n\n"
-            "Хочешь продолжить?",
-            reply_markup=paywall_keyboard(user_id, guide_key, renewal=False)
-        )
-
-trigger_phrases = [
-    "я запуталась",
-    "мне тяжело",
-    "я устала",
-    "мне больно",
-    "я потеряла себя",
-]
-
-    if any(p in message.text.lower() for p in trigger_phrases):
-    if not user_has_paid_access(user_id, guide_key):
-        await asyncio.sleep(0.5)
-
-await message.answer(
-            "Ты сейчас коснулась важного.\n\n"
-            "И именно в такие моменты всё обычно закрывается обратно.\n\n"
-            "Но ты уже начала видеть глубже.",
-            reply_markup=paywall_keyboard(user_id, guide_key)
-        )
-
-await asyncio.sleep(10)
-
-await message.answer(
-    "Я могу провести тебя через это глубже.\n"
-    "Не обязательно оставаться с этим одной."
-)
-
-if message_count == 4:
-    await message.answer(
-        "Ты уже вложилась в этот процесс.\n"
-        "Это не то, что хочется бросать."
-    )
-
-    # ========= PAYWALL ВНУТРИ ДИАЛОГА =========
-    if should_show_trial_paywall(
-        message_count=message_count,
-        trial_active=trial_active,
-        is_paid=False,
-    ) and paywall_stage is None:
-        await asyncio.sleep(0.4)
-        await message.answer(
-            build_trial_paywall_text(guide_key, user_id),
-            reply_markup=paywall_keyboard(user_id, guide_key, renewal=False)
-        )
-        await state.update_data(paywall_stage="trial_shown")
-        return
-
-    if should_show_deep_paywall(
-        message_count=message_count,
-        trial_active=trial_active,
-        is_paid=False,
-    ) and paywall_stage == "trial_shown":
-        await asyncio.sleep(0.4)
-        await message.answer(
-            build_deep_paywall_text(guide_key, user_id),
-            reply_markup=paywall_keyboard(user_id, guide_key, renewal=False)
         )
         await state.update_data(paywall_stage="deep_shown")
 
