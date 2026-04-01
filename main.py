@@ -596,7 +596,7 @@ if should_show_trial_paywall(
             reply_markup=paywall_keyboard(user_id, guide_key)
         )
     await state.update_data(paywall_stage="trial_shown")
-        return
+    return
 
 if should_show_deep_paywall(
         message_count=message_count,
