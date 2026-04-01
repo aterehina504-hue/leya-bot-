@@ -902,11 +902,11 @@ def detect_depth(text: str) -> int:
     return 0
 
     depth = detect_depth(message.text)
-data = await state.get_data()
+    data = await state.get_data()
 
-new_depth = max(depth, data.get("depth_level", 0))
+    new_depth = max(depth, data.get("depth_level", 0))
 
-await state.update_data(depth_level=new_depth)
+    await state.update_data(depth_level=new_depth)
 
 if new_depth == 2 and not user_has_paid_access(user_id, guide_key):
     await message.answer(
