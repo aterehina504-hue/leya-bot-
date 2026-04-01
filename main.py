@@ -531,31 +531,7 @@ async def guide_dialog(message: types.Message, state: FSMContext):
             )
 
     message_count += 1
-
-    # ===== paywall =====
-if should_show_trial_paywall(
-        message_count=message_count,
-        trial_active=trial_active,
-        is_paid=False,
-    ) and paywall_stage is None:
-    await message.answer(
-            build_trial_paywall_text(guide_key, user_id),
-            reply_markup=paywall_keyboard(user_id, guide_key)
-        )
-    await state.update_data(paywall_stage="trial_shown")
-    return
-
-if should_show_deep_paywall(
-        message_count=message_count,
-        trial_active=trial_active,
-        is_paid=False,
-    ) and paywall_stage == "trial_shown":
-    await message.answer(
-            build_deep_paywall_text(guide_key, user_id),
-            reply_markup=paywall_keyboard(user_id, guide_key)
-        )
-    await state.update_data(paywall_stage="deep_shown")
-
+    
 # ======================
 # GUIDE MENU
 # ======================
