@@ -532,24 +532,6 @@ async def guide_dialog(message: types.Message, state: FSMContext):
 
     message_count += 1
 
-    # ===== GPT =====
-    temp_history = history + [{"role": "user", "content": message.text}]
-
-    reply = await ask_guide(
-        guide_key=guide_key,
-        message=message.text,
-        history=temp_history
-    )
-
-history = (temp_history + [{"role": "assistant", "content": reply}])[-MAX_HISTORY:]
-
-await state.update_data(
-    history=history,
-    message_count_in_session=message_count
-)
-
-await message.answer(reply)
-
     # ===== эмоции =====
 if random.random() < 0.25:
     await message.answer("Я рядом с тобой в этом")
