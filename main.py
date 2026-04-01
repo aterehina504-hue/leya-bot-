@@ -532,41 +532,6 @@ async def guide_dialog(message: types.Message, state: FSMContext):
 
     message_count += 1
 
-    # ===== эмоции =====
-if random.random() < 0.25:
-    await message.answer("Я рядом с тобой в этом")
-
-if random.random() < 0.3:
-    await message.answer("Там есть ещё глубже.")
-
-    # ===== триггер =====
-trigger_phrases = ["запуталась", "тяжело", "устала", "больно"]
-
-if any(p in message.text.lower() for p in trigger_phrases):
-    if not user_has_paid_access(user_id, guide_key):
-        await asyncio.sleep(0.5)
-        await message.answer(
-            "Ты сейчас коснулась важного.\n\n"
-            "Важно не остановиться здесь.",
-            reply_markup=paywall_keyboard(user_id, guide_key)
-        )
-
-    # ===== вклад =====
-if message_count == 4:
-    await message.answer(
-        "Ты уже вложилась в этот процесс.\n"
-        "Не хочется обрывать это сейчас."
-    )
-
-    # ===== день 7 =====
-if day == 7 and message_count >= 2:
-    await message.answer(
-        "Ты прошла путь.\n\n"
-        "Но самое важное только начинается.\n\n"
-        "Ты очень близко.",
-        reply_markup=paywall_keyboard(user_id, guide_key, renewal=True)
-    )
-
     # ===== paywall =====
 if should_show_trial_paywall(
         message_count=message_count,
