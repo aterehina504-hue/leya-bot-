@@ -548,7 +548,7 @@ await state.update_data(
         message_count_in_session=message_count
 )
 
-    await message.answer(reply)
+await message.answer(reply)
 
     # ===== эмоции =====
     if random.random() < 0.25:
