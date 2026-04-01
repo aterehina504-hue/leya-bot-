@@ -892,20 +892,14 @@ async def guide_dialog(message: types.Message, state: FSMContext):
 
 def detect_depth(text: str) -> int:
     t = text.lower()
-
     if any(x in t for x in ["потеряла себя", "сломалась", "очень больно"]):
         return 2
-
     if any(x in t for x in ["устала", "тяжело", "запуталась"]):
         return 1
-
-    return 0
-
+        return 0
     depth = detect_depth(message.text)
     data = await state.get_data()
-
     new_depth = max(depth, data.get("depth_level", 0))
-
     await state.update_data(depth_level=new_depth)
 
 if new_depth == 2 and not user_has_paid_access(user_id, guide_key):
