@@ -541,7 +541,7 @@ async def guide_dialog(message: types.Message, state: FSMContext):
         history=temp_history
     )
 
-history = (temp_history + [{"role": "assistant", "content": reply}])[-MAX_HISTORY:]
+    history = (temp_history + [{"role": "assistant", "content": reply}])[-MAX_HISTORY:]
 
 await state.update_data(
         history=history,
