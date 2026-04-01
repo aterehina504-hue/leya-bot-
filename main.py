@@ -541,14 +541,14 @@ async def guide_dialog(message: types.Message, state: FSMContext):
         history=temp_history
     )
 
-    history = (temp_history + [{"role": "assistant", "content": reply}])[-MAX_HISTORY:]
+history = (temp_history + [{"role": "assistant", "content": reply}])[-MAX_HISTORY:]
 
-await state.update_data(
+    await state.update_data(
         history=history,
         message_count_in_session=message_count
-)
+    )
 
-await message.answer(reply)
+    await message.answer(reply)
 
     # ===== эмоции =====
 if random.random() < 0.25:
